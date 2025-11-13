@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Реєстрація - Synaps{% endblock %}
+
+{% block content %}
+    <h2>Реєстрація</h2>
+    <form action="" method="post" novalidate>
+        {{ form.hidden_tag() }}
+        
+        <div class="form-field">
+            {{ form.username.label }}<br>
+            {{ form.username() }}
+            {% for error in form.username.errors %}
+            <span class="error">[{{ error }}]</span>
+            {% endfor %}
+        </div>
+        
+        <div class="form-field">
+            {{ form.password.label }}<br>
+            {{ form.password() }}
+            {% for error in form.password.errors %}
+            <span class="error">[{{ error }}]</span>
+            {% endfor %}
+        </div>
+        
+        <div class="form-field">
+            {{ form.password2.label }}<br>
+            {{ form.password2() }}
+            {% for error in form.password2.errors %}
+            <span class="error">[{{ error }}]</span>
+            {% endfor %}
+        </div>
+        
+        <br>
+        <div>{{ form.submit() }}</div>
+    </form>
+{% endblock %}

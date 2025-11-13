@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}Synaps Messenger{% endblock %}</title>
+    <style>
+        body { font-family: sans-serif; background: #f4f4f4; margin: 0; }
+        .container { max-width: 800px; margin: 20px auto; padding: 20px; 
+                     background: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        nav { background: #333; padding: 10px; text-align: center; }
+        nav a { color: white; padding: 10px; text-decoration: none; }
+        nav a:hover { background: #555; }
+        .form-field { margin-bottom: 15px; }
+        .form-field label { display: block; margin-bottom: 5px; }
+        .form-field input[type="text"], .form-field input[type="password"] {
+            width: 95%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
+        }
+        .form-field .error { color: red; font-size: 0.9em; }
+
+        /* === НОВІ СТИЛІ ДЛЯ FLASH-ПОВІДОМЛЕНЬ === */
+        .flash-messages { list-style: none; padding: 0; margin: 15px 0; }
+        .flash-messages li {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: #f8f8f8;
+            color: #333;
+        }
+        /* (Ти можеш додати .flash-success, .flash-error для різних кольорів) */
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{{ url_for('main.index') }}">Головна (Чат)</a>
+        {% if current_user.is_anonymous %}
+        <a href="{{ url_for('main.login') }}">Увійти</a>
+        <a href="{{ url_for('main.register') }}">Реєстрація</a>
+        {% else %}
+        <span>Привіт, <strong>{{ current_user.username }}</strong>!</span>
+        <a href="{{ url_for('main.logout') }}">Вийти</a>
+        {% endif %}
+    </nav>
+    <div class="container">
+        
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <ul class="flash-messages">
+            {% for message in messages %}
+                <li>{{ message }}</li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
