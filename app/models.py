@@ -27,12 +27,8 @@ class Message(db.Model):
     text = db.Column(db.String(1024), nullable=True) 
     image_url = db.Column(db.String(512), nullable=True)
     is_image = db.Column(db.Boolean, default=False)
-    
-    # === НОВА КОЛОНКА ДЛЯ "ГАЛОЧОК" ===
     is_read = db.Column(db.Boolean, default=False, nullable=False)
-    
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow) 
-    
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
@@ -41,16 +37,16 @@ class Message(db.Model):
     
     def to_dict(self):
         ts = self.timestamp.isoformat()
-        if not ts.endswith('Z'):
+        if not ts.endswith('Z') and '+' not in ts:
             ts += 'Z'
             
         return {
             'id': self.id,
             'text': self.text, 'image_url': self.image_url,
             'is_image': self.is_image,
-            'timestamp': ts,
+            'timestamp': ts, 
             'sender_id': self.sender_id,
             'sender_username': self.sender.username,
             'recipient_id': self.recipient_id,
-            'is_read': self.is_read # <-- Додаємо нове поле
+            'is_read': self.is_read
         }

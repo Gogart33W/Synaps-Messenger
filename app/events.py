@@ -36,7 +36,7 @@ def handle_send_message(data):
         text=text,
         sender_id=current_user.id,
         recipient_id=int(recipient_id),
-        is_read=False # Явно ставимо, що не прочитано
+        is_read=False
     )
     db.session.add(new_message)
     db.session.commit()
@@ -71,21 +71,15 @@ def handle_load_history(data):
     })
     emit('online_users_list', list(online_users))
 
-# === НОВИЙ ОБРОБНИК ДЛЯ "ГАЛОЧОК" ===
 @socketio.on('mark_as_read')
 def handle_mark_as_read(data):
-    """
-    Коли юзер A відкриває чат з B, A надсилає цю подію.
-    Ми знаходимо всі повідомлення B до A і позначаємо їх як прочитані.
-    """
     if not current_user.is_authenticated: return
     
-    sender_id = data.get('sender_id') # Це ID того, з ким ми чатимось
+    sender_id = data.get('sender_id') 
     if not sender_id: return
 
-    recipient_id = current_user.id # Це я
+    recipient_id = current_user.id 
     
-    # Знаходимо всі непрочитані повідомлення від цього юзера до мене
     messages_to_update = Message.query.filter(
         Message.sender_id == sender_id,
         Message.recipient_id == recipient_id,
@@ -99,8 +93,6 @@ def handle_mark_as_read(data):
         
     if updated_message_ids:
         db.session.commit()
-        
-        # Повідомляємо відправника (sender_id), що ми прочитали його повідомлення
         emit('messages_were_read', 
-             {'message_ids': updated_message_ids}, 
+             {'message_ids': updated_message_ids, 'sender_id': sender_id}, 
              room=int(sender_id))
