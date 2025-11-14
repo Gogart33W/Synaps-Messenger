@@ -1,7 +1,5 @@
 {% extends "base.html" %}
-
 {% block title %}Чат - Synaps{% endblock %}
-
 {% block content %}
     <div id="content-wrapper" data-current-user-id="{{ current_user.id }}">
         <div id="user-list-container">
@@ -9,7 +7,9 @@
             <ul id="user-list">
                 {% for user in users %}
                     <li class="user-item" data-id="{{ user.id }}" data-username="{{ user.username }}">
-                        {{ user.username }}
+                        <span class="status-dot"></span>
+                        <span class="username">{{ user.username }}</span>
+                        <span class="unread-badge"></span>
                     </li>
                 {% endfor %}
             </ul>
@@ -28,8 +28,8 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        // ... (ВЕСЬ ТІЙ САМИЙ JAVASCRIPT КОД) ...
         const chatHistories = {};
+        const unreadCounts = {};
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
@@ -44,23 +44,36 @@
         const fileInput = document.getElementById('file_input');
         const fileButton = document.getElementById('file_button');
 
+        function findUserListItem(userId) {
+            return userList.querySelector(`.user-item[data-id="${userId}"]`);
+        }
+        
         userList.addEventListener('click', function(e) {
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
+            
             const newRecipientId = clickedUser.dataset.id;
             const newUsername = clickedUser.dataset.username;
+
             if (newRecipientId == activeChatRecipientId) return; 
+
             if (activeUserItem) {
                 activeUserItem.classList.remove('active');
             }
+
             activeChatRecipientId = newRecipientId;
             activeUserItem = clickedUser;
             activeUserItem.classList.add('active');
+
             chatTitle.innerText = 'Чат з: ' + newUsername;
             input.placeholder = 'Напишіть ' + newUsername + '...';
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
+            
+            // === План А: Скидаємо лічильник непрочитаних ===
+            updateUnreadCount(newRecipientId, 0);
+
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(activeChatRecipientId);
             } else {
@@ -89,15 +102,18 @@
                 hour: '2-digit', minute: '2-digit', 
                 day: '2-digit', month: 'short' 
             });
+
             if (msgData.sender_id == currentUserId) {
                 item.classList.add('my-message');
             }
+            
             let messageContent;
             if (msgData.is_image) {
                 messageContent = `<img src="${msgData.image_url}" alt="Зображення" class="chat-image">`;
             } else {
-                messageContent = msgData.text; 
+                messageContent = msgData.text || ""; 
             }
+
             item.innerHTML = `
                 <strong>${msgData.sender_username}:</strong> 
                 ${messageContent}
@@ -115,9 +131,7 @@
 
         function sendMessage() {
             const text = input.value.trim();
-            if (!text || !activeChatRecipientId) { 
-                return; 
-            }
+            if (!text || !activeChatRecipientId) return; 
             socket.emit('send_message', {
                 'text': text,
                 'recipient_id': activeChatRecipientId
@@ -131,9 +145,7 @@
         
         fileInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (!file || !activeChatRecipientId) {
-                return;
-            }
+            if (!file || !activeChatRecipientId) return;
             const formData = new FormData();
             formData.append('file', file);
             formData.append('recipient_id', activeChatRecipientId);
@@ -144,10 +156,7 @@
                 is_image: false,
                 timestamp: new Date().toISOString()
             }, true);
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
+            fetch('/upload', { method: 'POST', body: formData })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
@@ -156,12 +165,24 @@
                     alert('Помилка завантаження: ' + data.error);
                 }
             })
-            .catch(error => {
-                console.error('Fetch error:', error);
-                alert('Критична помилка завантаження.');
-            });
+            .catch(error => console.error('Fetch error:', error));
             e.target.value = null;
         });
+
+        // === План А: Функція оновлення лічильника ===
+        function updateUnreadCount(userId, count) {
+            unreadCounts[userId] = count;
+            const userItem = findUserListItem(userId);
+            if (userItem) {
+                const badge = userItem.querySelector('.unread-badge');
+                if (count > 0) {
+                    badge.innerText = count > 9 ? '9+' : count;
+                    badge.style.display = 'block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        }
 
         socket.on('new_message', function(data) {
             let chatPartnerId;
@@ -170,15 +191,23 @@
             } else {
                 chatPartnerId = data.sender_id;
             }
+            
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
             chatHistories[chatPartnerId].push(data);
+            
             if (chatPartnerId == activeChatRecipientId) {
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
                 }
                 renderMessage(data, true);
+            } else {
+                // === План А: Інкремент лічильника ===
+                if(data.sender_id != currentUserId) {
+                    const newCount = (unreadCounts[chatPartnerId] || 0) + 1;
+                    updateUnreadCount(chatPartnerId, newCount);
+                }
             }
         });
         
@@ -188,6 +217,27 @@
             if (partnerId == activeChatRecipientId) {
                 renderChatHistory(partnerId);
             }
+        });
+        
+        // === План Б: Обробка статусів ===
+        socket.on('user_status_change', function(data) {
+            const userItem = findUserListItem(data.user_id);
+            if (userItem) {
+                if (data.status === 'online') {
+                    userItem.classList.add('online');
+                } else {
+                    userItem.classList.remove('online');
+                }
+            }
+        });
+        
+        socket.on('online_users_list', function(onlineIds) {
+            onlineIds.forEach(userId => {
+                const userItem = findUserListItem(userId);
+                if (userItem) {
+                    userItem.classList.add('online');
+                }
+            });
         });
     </script>
     
@@ -205,13 +255,47 @@
             border-bottom: 1px solid #ccc;
         }
         #user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
+        
+        /* === Оновлений .user-item (План А і Б) === */
         .user-item {
             padding: 10px 15px; border-bottom: 1px solid #eee;
             cursor: pointer; font-weight: 500;
+            display: flex; align-items: center;
+            gap: 10px; /* Відступ між крапкою та іменем */
+            position: relative; /* Для лічильника */
         }
         .user-item:last-child { border-bottom: none; }
         .user-item:hover { background: #f0f0f0; }
         .user-item.active { background: #e0eafc; font-weight: bold; color: #0056b3; } 
+        
+        .username { flex-grow: 1; }
+        
+        /* === План Б: Стилі "Онлайн" === */
+        .status-dot {
+            width: 10px; height: 10px;
+            background-color: #ccc; /* Сірий (офлайн) */
+            border-radius: 50%;
+            flex-shrink: 0; /* Не стискатися */
+        }
+        .user-item.online .status-dot {
+            background-color: #28a745; /* Зелений (онлайн) */
+        }
+        
+        /* === План А: Стилі "Непрочитане" === */
+        .unread-badge {
+            display: none; /* Ховаємо за замовчуванням */
+            background-color: #007bff;
+            color: white;
+            font-size: 0.75em;
+            font-weight: bold;
+            padding: 2px 6px;
+            border-radius: 10px;
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        
         #chat_window h3 {
             padding: 10px 15px; margin: 0; background: #f7f7f7;
             border: 1px solid #ccc; border-bottom: none;
@@ -285,7 +369,7 @@
             cursor: not-allowed;
         }
         
-        /* === НОВИЙ БЛОК: АДАПТИВ (ДЛЯ ТЕЛЕФОНІВ) === */
+        /* === Фікс Мобілки === */
         @media (max-width: 768px) {
             .container {
                 margin: 0;
@@ -294,18 +378,18 @@
                 box-shadow: none;
             }
             #content-wrapper {
-                flex-direction: column; /* Ставить чат ПІД списком юзерів */
+                flex-direction: column; 
             }
             #user-list-container {
-                flex-basis: auto; /* Авто-висота */
-                max-height: 250px; /* Обмеження висоти списку */
+                flex-basis: auto; 
+                max-height: 250px; 
             }
             #chat_window {
                 flex-basis: auto;
-                height: 70vh; /* Займає 70% висоти екрану */
+                height: 70vh; 
             }
             #messages {
-                height: 100%; /* Заповнює доступне місце */
+                height: 100%; 
             }
         }
     </style>

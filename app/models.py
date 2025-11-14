@@ -2,7 +2,7 @@
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from datetime import datetime, timezone # <-- Перевір цей імпорт
+from datetime import datetime, timezone
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -19,9 +19,10 @@ class User(UserMixin, db.Model):
 
     def __repr__(self):
         return f'<User {self.username}>'
-    # ... (методи set_password/check_password) ...
+
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
+
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
@@ -32,7 +33,7 @@ class Message(db.Model):
     image_url = db.Column(db.String(512), nullable=True)
     is_image = db.Column(db.Boolean, default=False)
     
-    # === ОСЬ ФІКС ЧАСУ ===
+    # === Фікс Часу ===
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
     
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
