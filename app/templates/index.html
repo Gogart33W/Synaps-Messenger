@@ -39,8 +39,7 @@
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
         
-        // ===== КЛЮЧОВИЙ ФІКС: activeChatRecipientId ЗАВЖДИ NUMBER =====
-        let activeChatRecipientId = null; // ЗАВЖДИ буде number або null
+        let activeChatRecipientId = null;
         let activeUserItem = null; 
         
         const socket = io();
@@ -55,6 +54,60 @@
         const gifModal = document.getElementById('gif-modal');
         const gifLibrary = document.getElementById('gif-library');
         const gifCloseButton = document.getElementById('gif-close-button');
+
+        // ===== НОВИЙ КОД: ПІДТРИМКА ВСТАВКИ З БУФЕРА =====
+        input.addEventListener('paste', function(e) {
+            if (!activeChatRecipientId) return;
+            
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            console.log('Paste event, items:', items.length);
+            
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                console.log('Item type:', item.type);
+                
+                // Перевіряємо чи це картинка
+                if (item.type.indexOf('image') !== -1) {
+                    e.preventDefault(); // Запобігаємо стандартній поведінці
+                    
+                    const blob = item.getAsFile();
+                    if (!blob) continue;
+                    
+                    console.log('Image pasted, uploading...');
+                    uploadFile(blob);
+                    return;
+                }
+            }
+        });
+        
+        // ===== НОВИЙ КОД: DRAG & DROP =====
+        const chatWindow = document.getElementById('chat_window');
+        
+        chatWindow.addEventListener('dragover', function(e) {
+            if (!activeChatRecipientId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            chatWindow.style.background = '#f0f8ff';
+        });
+        
+        chatWindow.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            chatWindow.style.background = '';
+        });
+        
+        chatWindow.addEventListener('drop', function(e) {
+            if (!activeChatRecipientId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            chatWindow.style.background = '';
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                console.log('File dropped:', files[0].type);
+                uploadFile(files[0]);
+            }
+        });
 
         function updateUnreadCount(userId, count) {
             userId = parseInt(userId, 10);
@@ -134,13 +187,11 @@
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
             
-            // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ parseInt =====
             const newRecipientId = parseInt(clickedUser.dataset.id, 10);
             const newUsername = clickedUser.dataset.username;
             
-            console.log('Switching to chat with:', newRecipientId, typeof newRecipientId); // DEBUG
+            console.log('Switching to chat with:', newRecipientId, typeof newRecipientId);
             
-            // Якщо це той самий чат - ігноруємо
             if (newRecipientId === activeChatRecipientId) {
                 console.log('Same chat, ignoring');
                 return;
@@ -150,9 +201,8 @@
                 activeUserItem.classList.remove('active');
             }
             
-            // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ number =====
             activeChatRecipientId = newRecipientId; 
-            console.log('activeChatRecipientId set to:', activeChatRecipientId, typeof activeChatRecipientId); // DEBUG
+            console.log('activeChatRecipientId set to:', activeChatRecipientId, typeof activeChatRecipientId);
             
             activeUserItem = clickedUser;
             activeUserItem.classList.add('active');
@@ -245,13 +295,13 @@
                 return;
             }
             
-            console.log('Sending message to:', activeChatRecipientId, typeof activeChatRecipientId); // DEBUG
+            console.log('Sending message to:', activeChatRecipientId, typeof activeChatRecipientId);
             
             let payload = {
                 'text': null,
                 'media_url': null,
                 'media_type': 'text',
-                'recipient_id': activeChatRecipientId // Вже number
+                'recipient_id': activeChatRecipientId
             };
 
             if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view') || text.includes('giphy.com/media'))) {
@@ -271,9 +321,10 @@
             if (e.key === 'Enter') sendMessage();
         });
         
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
+        // ===== ОНОВЛЕНА ФУНКЦІЯ ЗАВАНТАЖЕННЯ =====
+        function uploadFile(file) {
             if (!file || !activeChatRecipientId) return;
+            
             const formData = new FormData();
             formData.append('file', file);
             formData.append('recipient_id', activeChatRecipientId);
@@ -299,6 +350,13 @@
                 }
             })
             .catch(error => console.error('Fetch error:', error));
+        }
+        
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                uploadFile(file);
+            }
             e.target.value = null;
         });
         
@@ -343,11 +401,9 @@
             });
         });
 
-        // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ parseInt для порівняння =====
         socket.on('new_message', function(data) {
-            console.log('Received new_message:', data); // DEBUG
+            console.log('Received new_message:', data);
             
-            // Перетворюємо ВСІ ID в числа
             const senderId = parseInt(data.sender_id, 10);
             const recipientId = parseInt(data.recipient_id, 10);
             
@@ -358,16 +414,15 @@
                 chatPartnerId = senderId;
             }
             
-            console.log('Message chatPartnerId:', chatPartnerId, 'activeChatRecipientId:', activeChatRecipientId); // DEBUG
+            console.log('Message chatPartnerId:', chatPartnerId, 'activeChatRecipientId:', activeChatRecipientId);
             
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
             chatHistories[chatPartnerId].push(data);
             
-            // ===== КЛЮЧОВИЙ ФІКС: === замість == =====
             if (chatPartnerId === activeChatRecipientId) {
-                console.log('Message is for active chat, rendering'); // DEBUG
+                console.log('Message is for active chat, rendering');
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
                 }
@@ -376,7 +431,7 @@
                     socket.emit('mark_as_read', { 'chat_partner_id': senderId });
                 }
             } else {
-                console.log('Message is NOT for active chat'); // DEBUG
+                console.log('Message is NOT for active chat');
             }
         });
         
@@ -399,7 +454,7 @@
         
         socket.on('history_loaded', function(data) {
             const partnerId = parseInt(data.partner_id, 10);
-            console.log('History loaded for:', partnerId, 'activeChatRecipientId:', activeChatRecipientId); // DEBUG
+            console.log('History loaded for:', partnerId, 'activeChatRecipientId:', activeChatRecipientId);
             
             chatHistories[partnerId] = data.history; 
             
@@ -471,7 +526,10 @@
             background: #fff; height: fit-content; max-height: 500px;
             display: flex; flex-direction: column;
         }
-        #chat_window { flex-basis: 70%; display: flex; flex-direction: column; }
+        #chat_window { 
+            flex-basis: 70%; display: flex; flex-direction: column;
+            transition: background 0.3s ease;
+        }
         #user-list-container h3 {
             margin: 0; padding: 10px 15px; background: #f7f7f7;
             border-bottom: 1px solid #ccc;
