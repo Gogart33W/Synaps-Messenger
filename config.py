@@ -1,13 +1,20 @@
 # config.py
 import os
 import sqlalchemy.pool
-import cloudinary # <-- НОВИЙ ІМПОРТ
+import cloudinary
+from dotenv import load_dotenv # <-- НОВИЙ ІМПОРТ
 
 # Визначаємо базову директорію
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+# === НОВА ЛОГІКА ===
+# Завантажуємо змінні з .env файлу (тільки для локального запуску)
+load_dotenv(os.path.join(basedir, '.env'))
+
+
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'bA4vLpQ8tZ1fE2cK7jR9sW_uX3gY6mN'
+    # Тепер він шукає ключ 1) на Render, 2) в .env, і 3) НЕ хардкодить нічого
+    SECRET_KEY = os.environ.get('SECRET_KEY')
     
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'app', 'synaps.db')
@@ -18,8 +25,6 @@ class Config:
         "poolclass": sqlalchemy.pool.NullPool
     }
     
-    # === НОВИЙ БЛОК: НАЛАШТУВАННЯ CLOUDINARY ===
-    # Ми читаємо ключі з середовища, які ти додав в Render
     cloudinary.config(
         cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME'),
         api_key = os.environ.get('CLOUDINARY_API_KEY'),

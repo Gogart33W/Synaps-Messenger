@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
     <title>{% block title %}Synaps Messenger{% endblock %}</title>
     <style>
         body { font-family: sans-serif; background: #f4f4f4; margin: 0; }
@@ -15,18 +17,12 @@
             width: 95%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
         }
         .form-field .error { color: red; font-size: 0.9em; }
-
-        /* === НОВІ СТИЛІ ДЛЯ FLASH-ПОВІДОМЛЕНЬ === */
         .flash-messages { list-style: none; padding: 0; margin: 15px 0; }
         .flash-messages li {
-            padding: 12px 15px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            border: 1px solid #ddd;
-            background-color: #f8f8f8;
-            color: #333;
+            padding: 12px 15px; margin-bottom: 10px;
+            border-radius: 4px; border: 1px solid #ddd;
+            background-color: #f8f8f8; color: #333;
         }
-        /* (Ти можеш додати .flash-success, .flash-error для різних кольорів) */
     </style>
 </head>
 <body>
@@ -41,7 +37,6 @@
         {% endif %}
     </nav>
     <div class="container">
-        
         {% with messages = get_flashed_messages() %}
         {% if messages %}
             <ul class="flash-messages">
