@@ -4,7 +4,7 @@ from . import socketio, db
 from flask_login import current_user
 from .models import Message, User
 from sqlalchemy import or_
-from datetime import datetime, timezone # <-- НОВИЙ ІМПОРТ
+from datetime import datetime, timezone
 
 online_users = set()
 
@@ -14,7 +14,6 @@ def handle_connect():
         join_room(current_user.id)
         online_users.add(current_user.id)
         
-        # Оновлюємо час входу в БД
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
@@ -22,13 +21,25 @@ def handle_connect():
              {'user_id': current_user.id, 'status': 'online', 'last_seen': current_user.last_seen.isoformat()}, 
              broadcast=True)
         emit('status', {'text': f'Ви підключені як {current_user.username}'} )
+        
+        # === ОСЬ ФІКС ===
+        # Відправляємо список юзерів ОДРАЗУ при підключенні
+        users_query = User.query.filter(User.id != current_user.id).all()
+        users_data = [user.to_dict() for user in users_query]
+        
+        emit('users_list', {
+            'users': users_data,
+            'online_ids': list(online_users)
+        })
+        # === КІНЕЦЬ ФІКСУ ===
+    else:
+        print('Анонімний клієнт підключився.')
 
 @socketio.on('disconnect')
 def handle_disconnect():
     if current_user.is_authenticated:
         online_users.discard(current_user.id)
         
-        # Оновлюємо час виходу в БД
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
@@ -79,14 +90,7 @@ def handle_load_history(data):
         'history': history_data
     })
     
-    # === ОНОВЛЕНО: Надсилаємо повні дані про юзерів ===
-    users_query = User.query.filter(User.id != current_user.id).all()
-    users_data = [user.to_dict() for user in users_query]
-    
-    emit('users_list', {
-        'users': users_data,
-        'online_ids': list(online_users)
-    })
+    # === МИ ПРИБРАЛИ ЗВІДСИ emit('users_list') ===
 
 
 @socketio.on('mark_as_read')
