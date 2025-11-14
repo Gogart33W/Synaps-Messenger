@@ -135,7 +135,6 @@
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
 
-            // === ФІКС: Знову використовуємо кеш ===
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(chatHistories[activeChatRecipientId]);
             } else {
@@ -208,6 +207,7 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
+        // === ФІКС: "Розумна" відправка ===
         function sendMessage() {
             const text = input.value.trim();
             if (!text || !activeChatRecipientId) return;
@@ -219,9 +219,10 @@
                 'recipient_id': activeChatRecipientId
             };
 
+            // Перевіряємо, чи це не GIF з клавіатури
             if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view'))) {
                 payload.media_type = 'gif';
-                payload.media_url = text;
+                payload.media_url = text; // <-- Змінено (з text на media_url)
             } else {
                 payload.media_type = 'text';
                 payload.text = text;
@@ -315,7 +316,6 @@
                 chatPartnerId = data.sender_id;
             }
             
-            // Зберігаємо в кеш
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
@@ -350,7 +350,7 @@
         // === ФІКС: Зберігаємо в кеш ===
         socket.on('history_loaded', function(data) {
             const partnerId = data.partner_id;
-            chatHistories[partnerId] = data.history; // Зберігаємо в кеш
+            chatHistories[partnerId] = data.history; 
             if (partnerId == activeChatRecipientId) {
                 renderChatHistory(data.history);
             }
@@ -360,7 +360,6 @@
         socket.on('messages_were_read', function(data) {
             const partnerId = data.reader_id;
             
-            // Оновлюємо кеш
             if (chatHistories[partnerId]) {
                 chatHistories[partnerId].forEach(msg => {
                     if (data.message_ids.includes(msg.id)) {
@@ -369,7 +368,6 @@
                 });
             }
             
-            // Оновлюємо UI, ТІЛЬКИ якщо цей чат активний
             if (partnerId == activeChatRecipientId) {
                 data.message_ids.forEach(messageId => {
                     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
