@@ -1,30 +1,40 @@
 {% extends "base.html" %}
-
 {% block title %}Вхід - Synaps{% endblock %}
-
 {% block content %}
-    <h2>Вхід</h2>
-    <form action="" method="post" novalidate>
-        {{ form.hidden_tag() }} <div class="form-field">
-            {{ form.username.label }}<br>
-            {{ form.username() }}
-            {% for error in form.username.errors %}
-            <span class="error">[{{ error }}]</span>
-            {% endfor %}
-        </div>
-        
-        <div class="form-field">
-            {{ form.password.label }}<br>
-            {{ form.password() }}
-            {% for error in form.password.errors %}
-            <span class="error">[{{ error }}]</span>
-            {% endfor %}
-        </div>
-        
-        <div>
-            {{ form.remember_me() }} {{ form.remember_me.label }}
-        </div>
-        <br>
-        <div>{{ form.submit() }}</div>
-    </form>
+    <div class="form-container">
+        <h2>Вхід до Synaps</h2>
+        <form action="" method="post" novalidate>
+            {{ form.hidden_tag() }}
+            
+            <div class="form-field">
+                {{ form.username.label }}
+                {{ form.username(class="") }}
+                {% for error in form.username.errors %}
+                <span class="error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            
+            <div class="form-field">
+                {{ form.password.label }}
+                {{ form.password(class="") }}
+                {% for error in form.password.errors %}
+                <span class="error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            
+            <div class="form-field" style="display: flex; align-items: center; gap: 8px;">
+                {{ form.remember_me() }}
+                {{ form.remember_me.label }}
+            </div>
+            
+            {{ form.submit(class="btn-primary") }}
+            
+            <p style="text-align: center; margin-top: 20px; color: var(--text-secondary);">
+                Немає акаунту? 
+                <a href="{{ url_for('main.register') }}" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">
+                    Зареєструватися
+                </a>
+            </p>
+        </form>
+    </div>
 {% endblock %}

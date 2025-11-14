@@ -1,51 +1,73 @@
 <!DOCTYPE html>
-<html>
+<html lang="uk">
 <head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Synaps Messenger{% endblock %}</title>
-    <style>
-        body { font-family: sans-serif; background: #f4f4f4; margin: 0; }
-        .container { max-width: 800px; margin: 20px auto; padding: 20px; 
-                     background: #fff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        nav { background: #333; padding: 10px; text-align: center; }
-        nav a { color: white; padding: 10px; text-decoration: none; }
-        nav a:hover { background: #555; }
-        .form-field { margin-bottom: 15px; }
-        .form-field label { display: block; margin-bottom: 5px; }
-        .form-field input[type="text"], .form-field input[type="password"] {
-            width: 95%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
-        }
-        .form-field .error { color: red; font-size: 0.9em; }
-        .flash-messages { list-style: none; padding: 0; margin: 15px 0; }
-        .flash-messages li {
-            padding: 12px 15px; margin-bottom: 10px;
-            border-radius: 4px; border: 1px solid #ddd;
-            background-color: #f8f8f8; color: #333;
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
 <body>
-    <nav>
-        <a href="{{ url_for('main.index') }}">Головна (Чат)</a>
-        {% if current_user.is_anonymous %}
-        <a href="{{ url_for('main.login') }}">Увійти</a>
-        <a href="{{ url_for('main.register') }}">Реєстрація</a>
-        {% else %}
-        <span>Привіт, <strong>{{ current_user.username }}</strong>!</span>
-        <a href="{{ url_for('main.logout') }}">Вийти</a>
-        {% endif %}
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <svg class="logo-icon" width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="16" r="14" fill="url(#gradient1)"/>
+                    <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <defs>
+                        <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
+                            <stop offset="0%" stop-color="#667eea"/>
+                            <stop offset="100%" stop-color="#764ba2"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span class="brand-name">Synaps</span>
+            </div>
+            
+            <div class="nav-menu">
+                {% if current_user.is_anonymous %}
+                    <a href="{{ url_for('main.login') }}" class="nav-link">Увійти</a>
+                    <a href="{{ url_for('main.register') }}" class="nav-link nav-link-primary">Реєстрація</a>
+                {% else %}
+                    <div class="user-info-nav">
+                        <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
+                        <span class="username-nav">{{ current_user.username }}</span>
+                    </div>
+                    <a href="{{ url_for('main.logout') }}" class="nav-link">Вийти</a>
+                {% endif %}
+                
+                <button id="theme-toggle" class="theme-toggle" title="Змінити тему">
+                    <svg class="sun-icon" width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z"/>
+                    </svg>
+                    <svg class="moon-icon" width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
     </nav>
-    <div class="container">
+    
+    <main class="main-container">
         {% with messages = get_flashed_messages() %}
         {% if messages %}
-            <ul class="flash-messages">
-            {% for message in messages %}
-                <li>{{ message }}</li>
-            {% endfor %}
-            </ul>
+            <div class="flash-container">
+                {% for message in messages %}
+                    <div class="flash-message">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                        </svg>
+                        <span>{{ message }}</span>
+                    </div>
+                {% endfor %}
+            </div>
         {% endif %}
         {% endwith %}
-        {% block content %}{% endblock %}
-    </div>
+        
+        <div class="content">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+    
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>
