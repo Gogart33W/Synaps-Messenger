@@ -49,7 +49,7 @@ def handle_send_message(data):
     
     if int(recipient_id) in online_users:
         socketio.emit('unread_message', 
-                      message_data, # Надсилаємо всі дані для сповіщення
+                      message_data, 
                       room=int(recipient_id))
 
 @socketio.on('load_history')

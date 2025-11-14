@@ -2,7 +2,7 @@
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from datetime import datetime, timezone # <-- Ось він
+from datetime import datetime, timezone
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -28,8 +28,8 @@ class Message(db.Model):
     image_url = db.Column(db.String(512), nullable=True)
     is_image = db.Column(db.Boolean, default=False)
     
-    # === Фікс Часу ===
-    timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
+    # Ми залишаємо тут старий default, бо МИ НЕ МОЖЕМО змінити таблицю
+    timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow) 
     
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -38,11 +38,19 @@ class Message(db.Model):
         return f'<Message {self.text[:50] if self.text else "Image"}>'
     
     def to_dict(self):
+        # === ОСЬ ФІКС ЧАСУ ===
+        # Ми вручну додаємо "Z" (ознаку UTC) до часу.
+        # Це змусить .toLocaleString() на фронтенді
+        # коректно конвертувати його у твій часовий пояс.
+        ts = self.timestamp.isoformat()
+        if not ts.endswith('Z'):
+            ts += 'Z'
+            
         return {
             'id': self.id,
             'text': self.text, 'image_url': self.image_url,
             'is_image': self.is_image,
-            'timestamp': self.timestamp.isoformat(), 
+            'timestamp': ts, # <-- Використовуємо виправлений час
             'sender_id': self.sender_id,
             'sender_username': self.sender.username,
             'recipient_id': self.recipient_id,

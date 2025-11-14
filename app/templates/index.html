@@ -48,7 +48,6 @@
             return userList.querySelector(`.user-item[data-id="${userId}"]`);
         }
         
-        // === План В: Запит дозволу на сповіщення ===
         function requestNotificationPermission() {
             if (!("Notification" in window)) {
                 console.log("Цей браузер не підтримує сповіщення.");
@@ -59,15 +58,17 @@
             }
         }
         
-        // === План В: Функція показу сповіщення ===
         function showNotification(title, body) {
             if (Notification.permission === "granted") {
-                new Notification(title, { body: body });
+                // Додаємо перевірку, чи активна вкладка
+                if (document.hidden) {
+                    new Notification(title, { body: body, icon: '/favicon.ico' });
+                }
             }
         }
 
         userList.addEventListener('click', function(e) {
-            requestNotificationPermission(); // Запитуємо дозвіл при першому кліку
+            requestNotificationPermission(); 
             
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
@@ -111,8 +112,11 @@
         
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
-            const timestamp = new Date(msgData.timestamp); // Це має бути UTC
-            const formattedTime = timestamp.toLocaleString('uk-UA', { // А це конвертує в +2/+3
+            
+            // === Фікс Часу (JS) ===
+            // Ми отримуємо рядок з 'Z' і конвертуємо в локальний час
+            const timestamp = new Date(msgData.timestamp); 
+            const formattedTime = timestamp.toLocaleString('uk-UA', { 
                 hour: '2-digit', minute: '2-digit', 
                 day: '2-digit', month: 'short' 
             });
@@ -215,21 +219,15 @@
                 }
                 renderMessage(data, true);
             } else {
-                if(data.sender_id != currentUserId) {
-                    const newCount = (unreadCounts[chatPartnerId] || 0) + 1;
-                    updateUnreadCount(chatPartnerId, newCount);
-                }
+                // (Логіка перенесена в 'unread_message' для надійності)
             }
         });
         
-        // === План А + В: Оновлено ===
         socket.on('unread_message', function(data) {
-            // data - це повний об'єкт повідомлення
             if (data.sender_id != activeChatRecipientId) {
                 const newCount = (unreadCounts[data.sender_id] || 0) + 1;
                 updateUnreadCount(data.sender_id, newCount);
                 
-                // План В: Показуємо сповіщення
                 const body = data.is_image ? "[Фотографія]" : data.text;
                 showNotification(data.sender_username, body);
             }
@@ -288,7 +286,6 @@
         .user-item:last-child { border-bottom: none; }
         .user-item:hover { background: #f0f0f0; }
         .user-item.active { background: #e0eafc; font-weight: bold; color: #0056b3; } 
-        
         .username { flex-grow: 1; }
         
         .status-dot {
@@ -297,9 +294,7 @@
             border-radius: 50%;
             flex-shrink: 0; 
         }
-        .user-item.online .status-dot {
-            background-color: #28a745; 
-        }
+        .user-item.online .status-dot { background-color: #28a745; }
         
         .unread-badge {
             display: none; 
@@ -388,7 +383,6 @@
             cursor: not-allowed;
         }
         
-        /* === Фікс Мобілки === */
         @media (max-width: 768px) {
             .container {
                 margin: 0;
