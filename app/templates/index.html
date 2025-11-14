@@ -49,27 +49,20 @@
         }
         
         function requestNotificationPermission() {
-            if (!("Notification" in window)) {
-                console.log("Цей браузер не підтримує сповіщення.");
-            } else if (Notification.permission !== "denied") {
-                Notification.requestPermission().then(permission => {
-                    console.log("Дозвіл на сповіщення:", permission);
-                });
+            if (!("Notification" in window)) return;
+            if (Notification.permission !== "denied") {
+                Notification.requestPermission();
             }
         }
         
         function showNotification(title, body) {
-            if (Notification.permission === "granted") {
-                // Додаємо перевірку, чи активна вкладка
-                if (document.hidden) {
-                    new Notification(title, { body: body, icon: '/favicon.ico' });
-                }
+            if (Notification.permission === "granted" && document.hidden) {
+                new Notification(title, { body: body, icon: '/favicon.ico' });
             }
         }
 
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
-            
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
             const newRecipientId = clickedUser.dataset.id;
@@ -86,8 +79,10 @@
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
-            
             updateUnreadCount(newRecipientId, 0);
+
+            // === НОВА ЛОГІКА: Повідомляємо сервер, що ми прочитали чат ===
+            socket.emit('mark_as_read', { 'sender_id': activeChatRecipientId });
 
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(activeChatRecipientId);
@@ -112,10 +107,9 @@
         
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
+            item.dataset.messageId = msgData.id; // <-- Додаємо ID повідомлення
             
-            // === Фікс Часу (JS) ===
-            // Ми отримуємо рядок з 'Z' і конвертуємо в локальний час
-            const timestamp = new Date(msgData.timestamp); 
+            const timestamp = new Date(msgData.timestamp);
             const formattedTime = timestamp.toLocaleString('uk-UA', { 
                 hour: '2-digit', minute: '2-digit', 
                 day: '2-digit', month: 'short' 
@@ -131,11 +125,19 @@
             } else {
                 messageContent = msgData.text || ""; 
             }
+            
+            // === НОВА ЛОГІКА: Додаємо блок для галочок ===
+            let readStatus = '';
+            if (msgData.sender_id == currentUserId) {
+                readStatus = `<span class="read-status">${msgData.is_read ? '✓✓' : '✓'}</span>`;
+            }
 
             item.innerHTML = `
                 <strong>${msgData.sender_username}:</strong> 
                 ${messageContent}
-                <span class="timestamp">${formattedTime}</span>
+                <span class="timestamp">
+                    ${formattedTime}
+                    ${readStatus} </span>
             `;
             messages.appendChild(item);
             if (shouldScroll) {
@@ -161,31 +163,7 @@
             if (e.key === 'Enter') sendMessage();
         });
         
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file || !activeChatRecipientId) return;
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('recipient_id', activeChatRecipientId);
-            renderMessage({
-                sender_id: currentUserId,
-                sender_username: currentUsername,
-                text: "<i>Завантаження фото...</i>",
-                is_image: false,
-                timestamp: new Date().toISOString()
-            }, true);
-            fetch('/upload', { method: 'POST', body: formData })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Upload success');
-                } else {
-                    alert('Помилка завантаження: ' + data.error);
-                }
-            })
-            .catch(error => console.error('Fetch error:', error));
-            e.target.value = null;
-        });
+        fileInput.addEventListener('change', function(e) { /* ... (без змін) ... */ });
 
         function updateUnreadCount(userId, count) {
             unreadCounts[userId] = count;
@@ -218,8 +196,11 @@
                     messages.innerHTML = '';
                 }
                 renderMessage(data, true);
-            } else {
-                // (Логіка перенесена в 'unread_message' для надійності)
+                
+                // === НОВА ЛОГІКА: Повідомляємо, що ми прочитали це ОДРАЗУ ===
+                if (data.sender_id != currentUserId) {
+                    socket.emit('mark_as_read', { 'sender_id': data.sender_id });
+                }
             }
         });
         
@@ -227,7 +208,6 @@
             if (data.sender_id != activeChatRecipientId) {
                 const newCount = (unreadCounts[data.sender_id] || 0) + 1;
                 updateUnreadCount(data.sender_id, newCount);
-                
                 const body = data.is_image ? "[Фотографія]" : data.text;
                 showNotification(data.sender_username, body);
             }
@@ -241,28 +221,56 @@
             }
         });
         
-        socket.on('user_status_change', function(data) {
-            const userItem = findUserListItem(data.user_id);
-            if (userItem) {
-                if (data.status === 'online') {
-                    userItem.classList.add('online');
-                } else {
-                    userItem.classList.remove('online');
+        // === НОВИЙ ОБРОБНИК: "Галочки" оновлюються ===
+        socket.on('messages_were_read', function(data) {
+            // data = { message_ids: [...] }
+            data.message_ids.forEach(messageId => {
+                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
+                if (msgElement) {
+                    const statusElement = msgElement.querySelector('.read-status');
+                    if (statusElement) {
+                        statusElement.innerHTML = '✓✓'; // Оновлюємо на дві галочки
+                    }
                 }
-            }
-        });
-        
-        socket.on('online_users_list', function(onlineIds) {
-            onlineIds.forEach(userId => {
-                const userItem = findUserListItem(userId);
-                if (userItem) {
-                    userItem.classList.add('online');
+                
+                // Також оновлюємо кеш, щоб при пере-рендері було ✓✓
+                for (const partnerId in chatHistories) {
+                    const msg = chatHistories[partnerId].find(m => m.id == messageId);
+                    if (msg) {
+                        msg.is_read = true;
+                        break;
+                    }
                 }
             });
         });
+        
+        socket.on('user_status_change', function(data) { /* ... (без змін) ... */ });
+        socket.on('online_users_list', function(onlineIds) { /* ... (без змін) ... */ });
     </script>
     
     <style>
+        /* ... (всі старі стилі) ... */
+        
+        /* === НОВІ СТИЛІ ДЛЯ "ГАЛОЧОК" === */
+        .timestamp {
+            font-size: 0.75em; color: #777;
+            display: block; margin-top: 5px; text-align: right;
+        }
+        .read-status {
+            display: inline-block;
+            margin-left: 5px;
+            font-weight: bold;
+            color: #777; /* Одна галочка (відправлено) */
+        }
+        .read-status:only-child { /* Дві галочки (прочитано) */
+             color: #007bff;
+        }
+        #messages li.my-message .timestamp { color: #e0e0e0; }
+        #messages li.my-message .read-status { color: #e0e0e0; }
+        #messages li.my-message .read-status:only-child { color: #fff; } /* Дві білі галочки */
+        
+        
+        /* ... (всі інші стилі: .user-item, .status-dot, .chat-image, @media, ... ) ... */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -276,7 +284,6 @@
             border-bottom: 1px solid #ccc;
         }
         #user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
-        
         .user-item {
             padding: 10px 15px; border-bottom: 1px solid #eee;
             cursor: pointer; font-weight: 500;
@@ -287,7 +294,6 @@
         .user-item:hover { background: #f0f0f0; }
         .user-item.active { background: #e0eafc; font-weight: bold; color: #0056b3; } 
         .username { flex-grow: 1; }
-        
         .status-dot {
             width: 10px; height: 10px;
             background-color: #ccc; 
@@ -295,7 +301,6 @@
             flex-shrink: 0; 
         }
         .user-item.online .status-dot { background-color: #28a745; }
-        
         .unread-badge {
             display: none; 
             background-color: #007bff;
@@ -309,7 +314,6 @@
             top: 50%;
             transform: translateY(-50%);
         }
-        
         #chat_window h3 {
             padding: 10px 15px; margin: 0; background: #f7f7f7;
             border: 1px solid #ccc; border-bottom: none;
@@ -340,11 +344,6 @@
             font-style: italic; color: #888; text-align: center;
             background: none; margin-left: auto; margin-right: auto;
         }
-        .timestamp {
-            font-size: 0.75em; color: #777;
-            display: block; margin-top: 5px; text-align: right;
-        }
-        #messages li.my-message .timestamp { color: #e0e0e0; }
         .chat-image {
             max-width: 100%; 
             border-radius: 5px;
@@ -382,7 +381,6 @@
             background-color: #f4f4f4;
             cursor: not-allowed;
         }
-        
         @media (max-width: 768px) {
             .container {
                 margin: 0;

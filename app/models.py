@@ -28,7 +28,9 @@ class Message(db.Model):
     image_url = db.Column(db.String(512), nullable=True)
     is_image = db.Column(db.Boolean, default=False)
     
-    # Ми залишаємо тут старий default, бо МИ НЕ МОЖЕМО змінити таблицю
+    # === НОВА КОЛОНКА ДЛЯ "ГАЛОЧОК" ===
+    is_read = db.Column(db.Boolean, default=False, nullable=False)
+    
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow) 
     
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
@@ -38,10 +40,6 @@ class Message(db.Model):
         return f'<Message {self.text[:50] if self.text else "Image"}>'
     
     def to_dict(self):
-        # === ОСЬ ФІКС ЧАСУ ===
-        # Ми вручну додаємо "Z" (ознаку UTC) до часу.
-        # Це змусить .toLocaleString() на фронтенді
-        # коректно конвертувати його у твій часовий пояс.
         ts = self.timestamp.isoformat()
         if not ts.endswith('Z'):
             ts += 'Z'
@@ -50,9 +48,9 @@ class Message(db.Model):
             'id': self.id,
             'text': self.text, 'image_url': self.image_url,
             'is_image': self.is_image,
-            'timestamp': ts, # <-- Використовуємо виправлений час
+            'timestamp': ts,
             'sender_id': self.sender_id,
             'sender_username': self.sender.username,
             'recipient_id': self.recipient_id,
-            'recipient_username': self.recipient.username
+            'is_read': self.is_read # <-- Додаємо нове поле
         }

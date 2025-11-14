@@ -16,8 +16,6 @@ def handle_connect():
              {'user_id': current_user.id, 'status': 'online'}, 
              broadcast=True)
         emit('status', {'text': f'Ви підключені як {current_user.username}'} )
-    else:
-        print('Анонімний клієнт підключився.')
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -26,7 +24,6 @@ def handle_disconnect():
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'offline'}, 
              broadcast=True)
-        print(f'Клієнт {current_user.username} відключився.')
 
 @socketio.on('send_message')
 def handle_send_message(data):
@@ -38,7 +35,8 @@ def handle_send_message(data):
     new_message = Message(
         text=text,
         sender_id=current_user.id,
-        recipient_id=int(recipient_id)
+        recipient_id=int(recipient_id),
+        is_read=False # Явно ставимо, що не прочитано
     )
     db.session.add(new_message)
     db.session.commit()
@@ -71,5 +69,38 @@ def handle_load_history(data):
         'partner_id': int(partner_id),
         'history': history_data
     })
-    
     emit('online_users_list', list(online_users))
+
+# === НОВИЙ ОБРОБНИК ДЛЯ "ГАЛОЧОК" ===
+@socketio.on('mark_as_read')
+def handle_mark_as_read(data):
+    """
+    Коли юзер A відкриває чат з B, A надсилає цю подію.
+    Ми знаходимо всі повідомлення B до A і позначаємо їх як прочитані.
+    """
+    if not current_user.is_authenticated: return
+    
+    sender_id = data.get('sender_id') # Це ID того, з ким ми чатимось
+    if not sender_id: return
+
+    recipient_id = current_user.id # Це я
+    
+    # Знаходимо всі непрочитані повідомлення від цього юзера до мене
+    messages_to_update = Message.query.filter(
+        Message.sender_id == sender_id,
+        Message.recipient_id == recipient_id,
+        Message.is_read == False
+    ).all()
+    
+    updated_message_ids = []
+    for msg in messages_to_update:
+        msg.is_read = True
+        updated_message_ids.append(msg.id)
+        
+    if updated_message_ids:
+        db.session.commit()
+        
+        # Повідомляємо відправника (sender_id), що ми прочитали його повідомлення
+        emit('messages_were_read', 
+             {'message_ids': updated_message_ids}, 
+             room=int(sender_id))
