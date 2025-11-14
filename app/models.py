@@ -8,8 +8,6 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), index=True, unique=True)
     password_hash = db.Column(db.String(256))
-    
-    # === НОВА КОЛОНКА ===
     last_seen = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     messages_sent = db.relationship('Message', 
@@ -20,24 +18,25 @@ class User(UserMixin, db.Model):
                                         backref='recipient', lazy='dynamic')
     def __repr__(self):
         return f'<User {self.username}>'
-        
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-        
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    # === НОВИЙ МЕТОД ===
     def to_dict(self):
-        """Перетворює юзера на словник, який JS зрозуміє"""
-        ts = self.last_seen.isoformat()
-        if not ts.endswith('Z') and '+' not in ts:
-            ts += 'Z'
+        # === ОСЬ ФІКС ===
+        # Якщо last_seen = None (для старих юзерів), 
+        # то ts теж буде None.
+        ts = None 
+        if self.last_seen: # Перевіряємо, чи є дата
+            ts = self.last_seen.isoformat()
+            if not ts.endswith('Z') and '+' not in ts:
+                ts += 'Z'
             
         return {
             'id': self.id,
             'username': self.username,
-            'last_seen': ts
+            'last_seen': ts # <-- Тепер тут може бути None
         }
 
 class Message(db.Model):

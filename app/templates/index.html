@@ -71,8 +71,14 @@
             });
         }
         
-        // === НОВА ФУНКЦІЯ: "Як давно" ===
+        // === ОНОВЛЕНА ФУНКЦІЯ: "Як давно" ===
         function timeAgo(isoString) {
+            // === ОСЬ ФІКС ===
+            // Якщо юзер старий (last_seen = null), показуємо "давно"
+            if (!isoString) {
+                return "був давно";
+            }
+            
             const date = new Date(isoString);
             const seconds = Math.floor((new Date() - date) / 1000);
             
@@ -93,8 +99,18 @@
             return userList.querySelector(`.user-item[data-id="${userId}"]`);
         }
         
-        function requestNotificationPermission() { /* ... (без змін) ... */ }
-        function showNotification(title, body) { /* ... (без змін) ... */ }
+        function requestNotificationPermission() {
+            if (!("Notification" in window)) return;
+            if (Notification.permission !== "denied") {
+                Notification.requestPermission();
+            }
+        }
+        
+        function showNotification(title, body) {
+            if (Notification.permission === "granted" && document.hidden) {
+                new Notification(title, { body: body, icon: '/favicon.ico' });
+            }
+        }
 
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
@@ -126,7 +142,18 @@
             }
         });
         
-        function renderChatHistory(chatPartnerId) { /* ... (без змін) ... */ }
+        function renderChatHistory(chatPartnerId) {
+            messages.innerHTML = '';
+            const history = chatHistories[chatPartnerId] || [];
+            if (history.length === 0) {
+                 messages.innerHTML = '<li class="status">Повідомлень ще немає.</li>';
+                 return;
+            }
+            for (const msg of history) {
+                renderMessage(msg, false); 
+            }
+            scrollToBottom(); 
+        }
         
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
@@ -162,22 +189,92 @@
                     ${readStatus}
                 </span>
             `;
-            // Ми прибрали <strong>${msgData.sender_username}</strong> для чистішого UI
             messages.appendChild(item);
             if (shouldScroll) {
                 scrollToBottom();
             }
         }
         
-        function scrollToBottom() { /* ... (без змін) ... */ }
-        function sendMessage() { /* ... (без змін) ... */ }
+        function scrollToBottom() {
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function sendMessage() {
+            const text = input.value.trim();
+            if (!text || !activeChatRecipientId) return; 
+            socket.emit('send_message', {
+                'text': text,
+                'recipient_id': activeChatRecipientId
+            });
+            input.value = "";
+        }
         sendButton.onclick = sendMessage;
-        input.addEventListener('keypress', function (e) { /* ... (без змін) ... */ });
-        fileInput.addEventListener('change', function(e) { /* ... (без змін) ... */ });
+        input.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') sendMessage();
+        });
+        
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !activeChatRecipientId) return;
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('recipient_id', activeChatRecipientId);
+            renderMessage({
+                sender_id: currentUserId,
+                sender_username: currentUsername,
+                text: "<i>Завантаження фото...</i>",
+                is_image: false,
+                timestamp: new Date().toISOString()
+            }, true);
+            fetch('/upload', { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Upload success');
+                } else {
+                    alert('Помилка завантаження: ' + data.error);
+                }
+            })
+            .catch(error => console.error('Fetch error:', error));
+            e.target.value = null;
+        });
 
-        function updateUnreadCount(userId, count) { /* ... (без змін) ... */ }
+        function updateUnreadCount(userId, count) {
+            unreadCounts[userId] = count;
+            const userItem = findUserListItem(userId);
+            if (userItem) {
+                const badge = userItem.querySelector('.unread-badge');
+                if (count > 0) {
+                    badge.innerText = count > 9 ? '9+' : count;
+                    badge.style.display = 'block';
+                } else {
+                    badge.style.display = 'none';
+                }
+            }
+        }
 
-        socket.on('new_message', function(data) { /* ... (без змін) ... */ });
+        socket.on('new_message', function(data) {
+            let chatPartnerId;
+            if (data.sender_id == currentUserId) {
+                chatPartnerId = data.recipient_id;
+            } else {
+                chatPartnerId = data.sender_id;
+            }
+            if (!chatHistories[chatPartnerId]) {
+                chatHistories[chatPartnerId] = [];
+            }
+            chatHistories[chatPartnerId].push(data);
+            
+            if (chatPartnerId == activeChatRecipientId) {
+                if (messages.querySelector('.status')) {
+                    messages.innerHTML = '';
+                }
+                renderMessage(data, true);
+                if (data.sender_id != currentUserId) {
+                    socket.emit('mark_as_read', { 'sender_id': data.sender_id });
+                }
+            }
+        });
         
         socket.on('unread_message', function(data) {
             if (data.sender_id != activeChatRecipientId) {
@@ -188,14 +285,39 @@
             }
         });
         
-        socket.on('history_loaded', function(data) { /* ... (без змін) ... */ });
-        socket.on('messages_were_read', function(data) { /* ... (без змін) ... */ });
+        socket.on('history_loaded', function(data) {
+            const partnerId = data.partner_id;
+            chatHistories[partnerId] = data.history;
+            if (partnerId == activeChatRecipientId) {
+                renderChatHistory(partnerId);
+            }
+        });
         
-        // === ОНОВЛЕНИЙ ОБРОБНИК СТАТУСУ ===
+        socket.on('messages_were_read', function(data) {
+            data.message_ids.forEach(messageId => {
+                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
+                if (msgElement) {
+                    const statusElement = msgElement.querySelector('.read-status');
+                    if (statusElement) {
+                        statusElement.innerHTML = '✓✓';
+                        statusElement.classList.add('read');
+                    }
+                }
+                
+                const partnerId = data.sender_id;
+                if (chatHistories[partnerId]) {
+                    chatHistories[partnerId].forEach(msg => {
+                        if (data.message_ids.includes(msg.id)) {
+                            msg.is_read = true;
+                        }
+                    });
+                }
+            });
+        });
+        
         socket.on('user_status_change', function(data) {
-            // data = {user_id, status, last_seen}
             const userItem = findUserListItem(data.user_id);
-            if (!userItem) return; // Юзера немає у списку
+            if (!userItem) return;
             
             const lastSeenEl = userItem.querySelector('.last-seen');
             
@@ -204,7 +326,6 @@
                 lastSeenEl.innerText = 'Онлайн';
             } else {
                 userItem.classList.remove('online');
-                // Оновлюємо "last_seen" у кеші
                 if (allUsers[data.user_id]) {
                     allUsers[data.user_id].last_seen = data.last_seen;
                 }
@@ -212,17 +333,13 @@
             }
         });
         
-        // === ОНОВЛЕНИЙ ОБРОБНИК СПИСКУ ЮЗЕРІВ ===
-        // (Раніше був 'online_users_list')
         socket.on('users_list', function(data) {
-            // data = { users: [...], online_ids: [...] }
             renderUserList(data.users, data.online_ids);
         });
     </script>
     
     <style>
-        /* ... (старі стилі .container, nav, .form-field, .flash-messages) ... */
-        
+        /* ... (ВСІ СТИЛІ ЗАЛИШАЮТЬСЯ БЕЗ ЗМІН) ... */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -236,8 +353,6 @@
             border-bottom: 1px solid #ccc;
         }
         #user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
-        
-        /* === ОНОВЛЕНИЙ .user-item === */
         .user-item {
             padding: 10px 15px; border-bottom: 1px solid #eee;
             cursor: pointer;
@@ -247,12 +362,11 @@
         .user-item:last-child { border-bottom: none; }
         .user-item:hover { background: #f0f0f0; }
         .user-item.active { background: #e0eafc; } 
-        
         .user-info {
             display: flex;
             flex-direction: column;
             flex-grow: 1;
-            overflow: hidden; /* Щоб довгі імена не ламали верстку */
+            overflow: hidden; 
         }
         .username { 
             font-weight: 500;
@@ -264,7 +378,6 @@
             font-size: 0.8em;
             color: #888;
         }
-        
         .status-dot {
             width: 10px; height: 10px;
             background-color: #ccc; 
@@ -273,7 +386,6 @@
         }
         .user-item.online .status-dot { background-color: #28a745; }
         .user-item.online .last-seen { color: #28a745; font-weight: 500; }
-        
         .unread-badge {
             display: none; 
             background-color: #007bff;
@@ -284,7 +396,6 @@
             border-radius: 10px;
             flex-shrink: 0;
         }
-        
         #chat_window h3 {
             padding: 10px 15px; margin: 0; background: #f7f7f7;
             border: 1px solid #ccc; border-bottom: none;
@@ -309,7 +420,7 @@
             margin-left: auto; text-align: left; 
         }
         #messages li:not(.my-message) { background: #f0f0f0; }
-        #messages li strong { display: none; } /* Прибрали ім'я з повідомлення */
+        #messages li strong { display: none; }
         #messages li.status { 
             font-style: italic; color: #888; text-align: center;
             background: none; margin-left: auto; margin-right: auto;
@@ -328,7 +439,6 @@
         #messages li.my-message .timestamp { color: #e0e0e0; }
         #messages li.my-message .read-status { color: #e0e0e0; }
         #messages li.my-message .read-status.read { color: #fff; }
-        
         .chat-image {
             max-width: 100%; 
             border-radius: 5px;
@@ -366,9 +476,27 @@
             background-color: #f4f4f4;
             cursor: not-allowed;
         }
-        
         @media (max-width: 768px) {
-            /* ... (секція @media без змін) ... */
+            .container {
+                margin: 0;
+                padding: 10px;
+                border-radius: 0;
+                box-shadow: none;
+            }
+            #content-wrapper {
+                flex-direction: column; 
+            }
+            #user-list-container {
+                flex-basis: auto; 
+                max-height: 250px; 
+            }
+            #chat_window {
+                flex-basis: auto;
+                height: 70vh; 
+            }
+            #messages {
+                height: 100%; 
+            }
         }
     </style>
 {% endblock %}
