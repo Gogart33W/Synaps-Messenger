@@ -135,6 +135,7 @@
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
 
+            // === ФІКС: Знову використовуємо кеш ===
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(chatHistories[activeChatRecipientId]);
             } else {
@@ -174,6 +175,7 @@
                     messageContent = `<img src="${msgData.media_url}" alt="Зображення" class="chat-image">`;
                     break;
                 case 'gif':
+                    // ФІКС: Гіфки тепер теж беруться з 'media_url'
                     messageContent = `<img src="${msgData.media_url || msgData.text}" alt="GIF" class="chat-image">`;
                     break;
                 case 'video':
@@ -220,7 +222,7 @@
             };
 
             // Перевіряємо, чи це не GIF з клавіатури
-            if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view'))) {
+            if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view') || text.includes('giphy.com/media'))) {
                 payload.media_type = 'gif';
                 payload.media_url = text; // <-- Змінено (з text на media_url)
             } else {
