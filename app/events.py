@@ -4,6 +4,7 @@ from . import socketio, db
 from flask_login import current_user
 from .models import Message, User
 from sqlalchemy import or_
+from datetime import datetime, timezone # <-- НОВИЙ ІМПОРТ
 
 online_users = set()
 
@@ -12,8 +13,13 @@ def handle_connect():
     if current_user.is_authenticated:
         join_room(current_user.id)
         online_users.add(current_user.id)
+        
+        # Оновлюємо час входу в БД
+        current_user.last_seen = datetime.now(timezone.utc)
+        db.session.commit()
+        
         emit('user_status_change', 
-             {'user_id': current_user.id, 'status': 'online'}, 
+             {'user_id': current_user.id, 'status': 'online', 'last_seen': current_user.last_seen.isoformat()}, 
              broadcast=True)
         emit('status', {'text': f'Ви підключені як {current_user.username}'} )
 
@@ -21,8 +27,13 @@ def handle_connect():
 def handle_disconnect():
     if current_user.is_authenticated:
         online_users.discard(current_user.id)
+        
+        # Оновлюємо час виходу в БД
+        current_user.last_seen = datetime.now(timezone.utc)
+        db.session.commit()
+        
         emit('user_status_change', 
-             {'user_id': current_user.id, 'status': 'offline'}, 
+             {'user_id': current_user.id, 'status': 'offline', 'last_seen': current_user.last_seen.isoformat()}, 
              broadcast=True)
 
 @socketio.on('send_message')
@@ -46,9 +57,7 @@ def handle_send_message(data):
     socketio.emit('new_message', message_data, room=current_user.id)
     
     if int(recipient_id) in online_users:
-        socketio.emit('unread_message', 
-                      message_data, 
-                      room=int(recipient_id))
+        socketio.emit('unread_message', message_data, room=int(recipient_id))
 
 @socketio.on('load_history')
 def handle_load_history(data):
@@ -69,15 +78,22 @@ def handle_load_history(data):
         'partner_id': int(partner_id),
         'history': history_data
     })
-    emit('online_users_list', list(online_users))
+    
+    # === ОНОВЛЕНО: Надсилаємо повні дані про юзерів ===
+    users_query = User.query.filter(User.id != current_user.id).all()
+    users_data = [user.to_dict() for user in users_query]
+    
+    emit('users_list', {
+        'users': users_data,
+        'online_ids': list(online_users)
+    })
+
 
 @socketio.on('mark_as_read')
 def handle_mark_as_read(data):
     if not current_user.is_authenticated: return
-    
     sender_id = data.get('sender_id') 
     if not sender_id: return
-
     recipient_id = current_user.id 
     
     messages_to_update = Message.query.filter(

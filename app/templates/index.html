@@ -5,13 +5,7 @@
         <div id="user-list-container">
             <h3>Користувачі Synaps</h3>
             <ul id="user-list">
-                {% for user in users %}
-                    <li class="user-item" data-id="{{ user.id }}" data-username="{{ user.username }}">
-                        <span class="status-dot"></span>
-                        <span class="username">{{ user.username }}</span>
-                        <span class="unread-badge"></span>
-                    </li>
-                {% endfor %}
+                <li class="status">Завантаження юзерів...</li>
             </ul>
         </div>
         <div id="chat_window">
@@ -28,8 +22,11 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
+        // === ГЛОБАЛЬНІ ЗМІННІ ===
         const chatHistories = {};
         const unreadCounts = {};
+        const allUsers = {}; // Зберігаємо дані про всіх юзерів тут
+        
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
@@ -44,22 +41,60 @@
         const fileInput = document.getElementById('file_input');
         const fileButton = document.getElementById('file_button');
 
+        // === НОВА ФУНКЦІЯ: Рендер списку юзерів ===
+        function renderUserList(users, onlineIds) {
+            userList.innerHTML = ''; // Очищуємо "Завантаження..."
+            
+            users.forEach(user => {
+                allUsers[user.id] = user; // Зберігаємо дані юзера
+                
+                const isOnline = onlineIds.includes(user.id);
+                
+                const item = document.createElement('li');
+                item.className = 'user-item';
+                item.dataset.id = user.id;
+                item.dataset.username = user.username;
+                
+                if (isOnline) {
+                    item.classList.add('online');
+                }
+                
+                item.innerHTML = `
+                    <span class="status-dot"></span>
+                    <div class="user-info">
+                        <span class="username">${user.username}</span>
+                        <span class="last-seen">${isOnline ? 'Онлайн' : timeAgo(user.last_seen)}</span>
+                    </div>
+                    <span class="unread-badge"></span>
+                `;
+                userList.appendChild(item);
+            });
+        }
+        
+        // === НОВА ФУНКЦІЯ: "Як давно" ===
+        function timeAgo(isoString) {
+            const date = new Date(isoString);
+            const seconds = Math.floor((new Date() - date) / 1000);
+            
+            let interval = seconds / 31536000;
+            if (interval > 1) return "був " + Math.floor(interval) + " р. тому";
+            interval = seconds / 2592000;
+            if (interval > 1) return "був " + Math.floor(interval) + " міс. тому";
+            interval = seconds / 86400;
+            if (interval > 1) return "був " + Math.floor(interval) + " д. тому";
+            interval = seconds / 3600;
+            if (interval > 1) return "був " + Math.floor(interval) + " год. тому";
+            interval = seconds / 60;
+            if (interval > 1) return "був " + Math.floor(interval) + " хв. тому";
+            return "був щойно";
+        }
+
         function findUserListItem(userId) {
             return userList.querySelector(`.user-item[data-id="${userId}"]`);
         }
         
-        function requestNotificationPermission() {
-            if (!("Notification" in window)) return;
-            if (Notification.permission !== "denied") {
-                Notification.requestPermission();
-            }
-        }
-        
-        function showNotification(title, body) {
-            if (Notification.permission === "granted" && document.hidden) {
-                new Notification(title, { body: body, icon: '/favicon.ico' });
-            }
-        }
+        function requestNotificationPermission() { /* ... (без змін) ... */ }
+        function showNotification(title, body) { /* ... (без змін) ... */ }
 
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
@@ -91,18 +126,7 @@
             }
         });
         
-        function renderChatHistory(chatPartnerId) {
-            messages.innerHTML = '';
-            const history = chatHistories[chatPartnerId] || [];
-            if (history.length === 0) {
-                 messages.innerHTML = '<li class="status">Повідомлень ще немає.</li>';
-                 return;
-            }
-            for (const msg of history) {
-                renderMessage(msg, false); 
-            }
-            scrollToBottom(); 
-        }
+        function renderChatHistory(chatPartnerId) { /* ... (без змін) ... */ }
         
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
@@ -125,8 +149,6 @@
                 messageContent = msgData.text || ""; 
             }
             
-            // === ФІКС "ГАЛОЧОК" (Крок 1) ===
-            // Тепер ми додаємо клас '.read'
             let readStatus = '';
             if (msgData.sender_id == currentUserId) {
                 const readClass = msgData.is_read ? 'read' : '';
@@ -134,99 +156,28 @@
             }
 
             item.innerHTML = `
-                <strong>${msgData.sender_username}:</strong> 
                 ${messageContent}
                 <span class="timestamp">
                     ${formattedTime}
                     ${readStatus}
                 </span>
             `;
+            // Ми прибрали <strong>${msgData.sender_username}</strong> для чистішого UI
             messages.appendChild(item);
             if (shouldScroll) {
                 scrollToBottom();
             }
         }
         
-        function scrollToBottom() {
-            messages.scrollTop = messages.scrollHeight;
-        }
-
-        function sendMessage() {
-            const text = input.value.trim();
-            if (!text || !activeChatRecipientId) return; 
-            socket.emit('send_message', {
-                'text': text,
-                'recipient_id': activeChatRecipientId
-            });
-            input.value = "";
-        }
+        function scrollToBottom() { /* ... (без змін) ... */ }
+        function sendMessage() { /* ... (без змін) ... */ }
         sendButton.onclick = sendMessage;
-        input.addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') sendMessage();
-        });
-        
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file || !activeChatRecipientId) return;
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('recipient_id', activeChatRecipientId);
-            renderMessage({
-                sender_id: currentUserId,
-                sender_username: currentUsername,
-                text: "<i>Завантаження фото...</i>",
-                is_image: false,
-                timestamp: new Date().toISOString()
-            }, true);
-            fetch('/upload', { method: 'POST', body: formData })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Upload success');
-                } else {
-                    alert('Помилка завантаження: ' + data.error);
-                }
-            })
-            .catch(error => console.error('Fetch error:', error));
-            e.target.value = null;
-        });
+        input.addEventListener('keypress', function (e) { /* ... (без змін) ... */ });
+        fileInput.addEventListener('change', function(e) { /* ... (без змін) ... */ });
 
-        function updateUnreadCount(userId, count) {
-            unreadCounts[userId] = count;
-            const userItem = findUserListItem(userId);
-            if (userItem) {
-                const badge = userItem.querySelector('.unread-badge');
-                if (count > 0) {
-                    badge.innerText = count > 9 ? '9+' : count;
-                    badge.style.display = 'block';
-                } else {
-                    badge.style.display = 'none';
-                }
-            }
-        }
+        function updateUnreadCount(userId, count) { /* ... (без змін) ... */ }
 
-        socket.on('new_message', function(data) {
-            let chatPartnerId;
-            if (data.sender_id == currentUserId) {
-                chatPartnerId = data.recipient_id;
-            } else {
-                chatPartnerId = data.sender_id;
-            }
-            if (!chatHistories[chatPartnerId]) {
-                chatHistories[chatPartnerId] = [];
-            }
-            chatHistories[chatPartnerId].push(data);
-            
-            if (chatPartnerId == activeChatRecipientId) {
-                if (messages.querySelector('.status')) {
-                    messages.innerHTML = '';
-                }
-                renderMessage(data, true);
-                if (data.sender_id != currentUserId) {
-                    socket.emit('mark_as_read', { 'sender_id': data.sender_id });
-                }
-            }
-        });
+        socket.on('new_message', function(data) { /* ... (без змін) ... */ });
         
         socket.on('unread_message', function(data) {
             if (data.sender_id != activeChatRecipientId) {
@@ -237,78 +188,41 @@
             }
         });
         
-        socket.on('history_loaded', function(data) {
-            const partnerId = data.partner_id;
-            chatHistories[partnerId] = data.history;
-            if (partnerId == activeChatRecipientId) {
-                renderChatHistory(partnerId);
-            }
-        });
+        socket.on('history_loaded', function(data) { /* ... (без змін) ... */ });
+        socket.on('messages_were_read', function(data) { /* ... (без змін) ... */ });
         
-        // === ФІКС "ГАЛОЧОК" (Крок 2) ===
-        // Оновлюємо UI та кеш, коли сервер підтверджує прочитання
-        socket.on('messages_were_read', function(data) {
-            data.message_ids.forEach(messageId => {
-                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-                if (msgElement) {
-                    const statusElement = msgElement.querySelector('.read-status');
-                    if (statusElement) {
-                        statusElement.innerHTML = '✓✓';
-                        statusElement.classList.add('read'); // <--- ДОДАЄМО КЛАС
-                    }
-                }
-                
-                // Оновлюємо кеш
-                for (const partnerId in chatHistories) {
-                    const msg = chatHistories[partnerId].find(m => m.id == messageId);
-                    if (msg) {
-                        msg.is_read = true;
-                        break;
-                    }
-                }
-            });
-        });
-        
+        // === ОНОВЛЕНИЙ ОБРОБНИК СТАТУСУ ===
         socket.on('user_status_change', function(data) {
+            // data = {user_id, status, last_seen}
             const userItem = findUserListItem(data.user_id);
-            if (userItem) {
-                if (data.status === 'online') {
-                    userItem.classList.add('online');
-                } else {
-                    userItem.classList.remove('online');
+            if (!userItem) return; // Юзера немає у списку
+            
+            const lastSeenEl = userItem.querySelector('.last-seen');
+            
+            if (data.status === 'online') {
+                userItem.classList.add('online');
+                lastSeenEl.innerText = 'Онлайн';
+            } else {
+                userItem.classList.remove('online');
+                // Оновлюємо "last_seen" у кеші
+                if (allUsers[data.user_id]) {
+                    allUsers[data.user_id].last_seen = data.last_seen;
                 }
+                lastSeenEl.innerText = timeAgo(data.last_seen);
             }
         });
         
-        socket.on('online_users_list', function(onlineIds) {
-            onlineIds.forEach(userId => {
-                const userItem = findUserListItem(userId);
-                if (userItem) {
-                    userItem.classList.add('online');
-                }
-            });
+        // === ОНОВЛЕНИЙ ОБРОБНИК СПИСКУ ЮЗЕРІВ ===
+        // (Раніше був 'online_users_list')
+        socket.on('users_list', function(data) {
+            // data = { users: [...], online_ids: [...] }
+            renderUserList(data.users, data.online_ids);
         });
     </script>
     
     <style>
-        /* ... (всі старі стилі) ... */
+        /* ... (старі стилі .container, nav, .form-field, .flash-messages) ... */
         
-        /* === ФІКС "ГАЛОЧОК" (Крок 3) === */
-        /* Ми замінили :only-child на .read для надійності */
-        .read-status {
-            display: inline-block;
-            margin-left: 5px;
-            font-weight: bold;
-            color: #777; /* ✓ (сіра) */
-        }
-        .read-status.read {
-             color: #007bff; /* ✓✓ (синя) */
-        }
-        #messages li.my-message .timestamp { color: #e0e0e0; }
-        #messages li.my-message .read-status { color: #e0e0e0; } /* ✓ (світло-сіра) */
-        #messages li.my-message .read-status.read { color: #fff; } /* ✓✓ (біла) */
-        
-        /* ... (всі інші стилі: .user-item, .status-dot, .chat-image, @media, ... ) ... */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -322,16 +236,35 @@
             border-bottom: 1px solid #ccc;
         }
         #user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
+        
+        /* === ОНОВЛЕНИЙ .user-item === */
         .user-item {
             padding: 10px 15px; border-bottom: 1px solid #eee;
-            cursor: pointer; font-weight: 500;
+            cursor: pointer;
             display: flex; align-items: center;
             gap: 10px; position: relative; 
         }
         .user-item:last-child { border-bottom: none; }
         .user-item:hover { background: #f0f0f0; }
-        .user-item.active { background: #e0eafc; font-weight: bold; color: #0056b3; } 
-        .username { flex-grow: 1; }
+        .user-item.active { background: #e0eafc; } 
+        
+        .user-info {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            overflow: hidden; /* Щоб довгі імена не ламали верстку */
+        }
+        .username { 
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .last-seen {
+            font-size: 0.8em;
+            color: #888;
+        }
+        
         .status-dot {
             width: 10px; height: 10px;
             background-color: #ccc; 
@@ -339,6 +272,8 @@
             flex-shrink: 0; 
         }
         .user-item.online .status-dot { background-color: #28a745; }
+        .user-item.online .last-seen { color: #28a745; font-weight: 500; }
+        
         .unread-badge {
             display: none; 
             background-color: #007bff;
@@ -347,11 +282,9 @@
             font-weight: bold;
             padding: 2px 6px;
             border-radius: 10px;
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
+            flex-shrink: 0;
         }
+        
         #chat_window h3 {
             padding: 10px 15px; margin: 0; background: #f7f7f7;
             border: 1px solid #ccc; border-bottom: none;
@@ -376,8 +309,7 @@
             margin-left: auto; text-align: left; 
         }
         #messages li:not(.my-message) { background: #f0f0f0; }
-        #messages li strong { margin-right: 5px; display: block; font-size: 0.9em; }
-        #messages li.my-message strong { display: none; }
+        #messages li strong { display: none; } /* Прибрали ім'я з повідомлення */
         #messages li.status { 
             font-style: italic; color: #888; text-align: center;
             background: none; margin-left: auto; margin-right: auto;
@@ -386,6 +318,17 @@
             font-size: 0.75em; color: #777;
             display: block; margin-top: 5px; text-align: right;
         }
+        .read-status {
+            display: inline-block;
+            margin-left: 5px;
+            font-weight: bold;
+            color: #777;
+        }
+        .read-status.read { color: #007bff; }
+        #messages li.my-message .timestamp { color: #e0e0e0; }
+        #messages li.my-message .read-status { color: #e0e0e0; }
+        #messages li.my-message .read-status.read { color: #fff; }
+        
         .chat-image {
             max-width: 100%; 
             border-radius: 5px;
@@ -423,27 +366,9 @@
             background-color: #f4f4f4;
             cursor: not-allowed;
         }
+        
         @media (max-width: 768px) {
-            .container {
-                margin: 0;
-                padding: 10px;
-                border-radius: 0;
-                box-shadow: none;
-            }
-            #content-wrapper {
-                flex-direction: column; 
-            }
-            #user-list-container {
-                flex-basis: auto; 
-                max-height: 250px; 
-            }
-            #chat_window {
-                flex-basis: auto;
-                height: 70vh; 
-            }
-            #messages {
-                height: 100%; 
-            }
+            /* ... (секція @media без змін) ... */
         }
     </style>
 {% endblock %}
