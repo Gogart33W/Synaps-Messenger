@@ -24,19 +24,17 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
     def to_dict(self):
-        # === ОСЬ ФІКС ===
-        # Якщо last_seen = None (для старих юзерів), 
-        # то ts теж буде None.
         ts = None 
-        if self.last_seen: # Перевіряємо, чи є дата
+        if self.last_seen:
             ts = self.last_seen.isoformat()
+            # === ОСЬ ФІКС ЧАСУ (який я пропустив) ===
             if not ts.endswith('Z') and '+' not in ts:
                 ts += 'Z'
             
         return {
             'id': self.id,
             'username': self.username,
-            'last_seen': ts # <-- Тепер тут може бути None
+            'last_seen': ts
         }
 
 class Message(db.Model):

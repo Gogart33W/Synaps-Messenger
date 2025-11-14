@@ -22,11 +22,9 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        // === ГЛОБАЛЬНІ ЗМІННІ ===
         const chatHistories = {};
         const unreadCounts = {};
-        const allUsers = {}; // Зберігаємо дані про всіх юзерів тут
-        
+        const allUsers = {}; 
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
@@ -41,15 +39,12 @@
         const fileInput = document.getElementById('file_input');
         const fileButton = document.getElementById('file_button');
 
-        // === НОВА ФУНКЦІЯ: Рендер списку юзерів ===
         function renderUserList(users, onlineIds) {
-            userList.innerHTML = ''; // Очищуємо "Завантаження..."
+            userList.innerHTML = ''; 
             
             users.forEach(user => {
-                allUsers[user.id] = user; // Зберігаємо дані юзера
-                
+                allUsers[user.id] = user; 
                 const isOnline = onlineIds.includes(user.id);
-                
                 const item = document.createElement('li');
                 item.className = 'user-item';
                 item.dataset.id = user.id;
@@ -63,7 +58,7 @@
                     <span class="status-dot"></span>
                     <div class="user-info">
                         <span class="username">${user.username}</span>
-                        <span class="last-seen">${isOnline ? 'Онлайн' : timeAgo(user.last_seen)}</span>
+                        <span class="last-seen">${isOnline ? 'Онлайн' : formatLastSeen(user.last_seen)}</span>
                     </div>
                     <span class="unread-badge"></span>
                 `;
@@ -71,28 +66,31 @@
             });
         }
         
-        // === ОНОВЛЕНА ФУНКЦІЯ: "Як давно" ===
-        function timeAgo(isoString) {
-            // === ОСЬ ФІКС ===
-            // Якщо юзер старий (last_seen = null), показуємо "давно"
+        // === ОНОВЛЕНА ФУНКЦІЯ (замість timeAgo) ===
+        function formatLastSeen(isoString) {
             if (!isoString) {
                 return "був давно";
             }
             
             const date = new Date(isoString);
-            const seconds = Math.floor((new Date() - date) / 1000);
+            const now = new Date();
             
-            let interval = seconds / 31536000;
-            if (interval > 1) return "був " + Math.floor(interval) + " р. тому";
-            interval = seconds / 2592000;
-            if (interval > 1) return "був " + Math.floor(interval) + " міс. тому";
-            interval = seconds / 86400;
-            if (interval > 1) return "був " + Math.floor(interval) + " д. тому";
-            interval = seconds / 3600;
-            if (interval > 1) return "був " + Math.floor(interval) + " год. тому";
-            interval = seconds / 60;
-            if (interval > 1) return "був " + Math.floor(interval) + " хв. тому";
-            return "був щойно";
+            const timeOpts = { hour: '2-digit', minute: '2-digit' };
+            
+            // Перевіряємо, чи це сьогодні
+            if (date.toDateString() === now.toDateString()) {
+                return `був сьогодні о ${date.toLocaleString('uk-UA', timeOpts)}`;
+            }
+            
+            // Перевіряємо, чи це вчора
+            const yesterday = new Date(now);
+            yesterday.setDate(now.getDate() - 1);
+            if (date.toDateString() === yesterday.toDateString()) {
+                return `був вчора о ${date.toLocaleString('uk-UA', timeOpts)}`;
+            }
+            
+            // Якщо давніше
+            return `був ${date.toLocaleString('uk-UA', { day: '2-digit', month: 'short' })}`;
         }
 
         function findUserListItem(userId) {
@@ -303,7 +301,6 @@
                         statusElement.classList.add('read');
                     }
                 }
-                
                 const partnerId = data.sender_id;
                 if (chatHistories[partnerId]) {
                     chatHistories[partnerId].forEach(msg => {
@@ -329,7 +326,9 @@
                 if (allUsers[data.user_id]) {
                     allUsers[data.user_id].last_seen = data.last_seen;
                 }
-                lastSeenEl.innerText = timeAgo(data.last_seen);
+                // === ОНОВЛЕНО ===
+                // Використовуємо нову функцію
+                lastSeenEl.innerText = formatLastSeen(data.last_seen);
             }
         });
         
@@ -340,6 +339,7 @@
     
     <style>
         /* ... (ВСІ СТИЛІ ЗАЛИШАЮТЬСЯ БЕЗ ЗМІН) ... */
+        /* (Я залишаю їх тут, щоб файл був повний) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
