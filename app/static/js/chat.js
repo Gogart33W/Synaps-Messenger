@@ -3,12 +3,16 @@ const chatHistories = {};
 const unreadCounts = {};
 const allUsers = {};
 
+// Tenor API Key (безкоштовний!)
+const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'; // Публічний ключ
+const TENOR_CLIENT_KEY = 'synaps_messenger';
+
 const wrapper = document.getElementById('content-wrapper');
 const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
-const currentUsername = wrapper.querySelector('nav strong')?.textContent || 'User';
 
 let activeChatRecipientId = null;
 let activeUserItem = null;
+let currentGifTab = 'trending';
 
 // ===== DOM ЕЛЕМЕНТИ =====
 const socket = io();
@@ -23,12 +27,16 @@ const gifButton = document.getElementById('gif_button');
 const gifModal = document.getElementById('gif-modal');
 const gifLibrary = document.getElementById('gif-library');
 const gifCloseButton = document.getElementById('gif-close-button');
+const gifSearchInput = document.getElementById('gif-search-input');
+const gifSearchButton = document.getElementById('gif-search-button');
+const gifSearchContainer = document.getElementById('gif-search-container');
 
 // ===== ІНІЦІАЛІЗАЦІЯ =====
 function init() {
     setupEventListeners();
     setupPasteSupport();
     setupDragAndDrop();
+    setupGifTabs();
 }
 
 // ===== EVENT LISTENERS =====
@@ -41,19 +49,114 @@ function setupEventListeners() {
     gifCloseButton.addEventListener('click', closeGifModal);
     gifModal.addEventListener('click', handleModalClick);
     gifLibrary.addEventListener('click', handleGifSelect);
+    gifSearchButton.addEventListener('click', searchGifs);
+    gifSearchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchGifs();
+    });
 }
 
-// ===== PASTE SUPPORT (для стікерів з клавіатури) =====
+// ===== GIF TABS =====
+function setupGifTabs() {
+    const tabs = document.querySelectorAll('.gif-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            tabs.forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            
+            const tabType = this.dataset.tab;
+            currentGifTab = tabType;
+            
+            if (tabType === 'search') {
+                gifSearchContainer.style.display = 'flex';
+                gifLibrary.innerHTML = '<div class="gif-loading">Введіть запит для пошуку GIF 🔍</div>';
+            } else {
+                gifSearchContainer.style.display = 'none';
+                if (tabType === 'trending') {
+                    loadTrendingGifs();
+                } else if (tabType === 'my') {
+                    loadMyGifs();
+                }
+            }
+        });
+    });
+}
+
+// ===== TENOR API =====
+async function loadTrendingGifs() {
+    gifLibrary.innerHTML = '<div class="gif-loading">Завантаження трендових GIF...</div>';
+    
+    try {
+        const url = `https://tenor.googleapis.com/v2/featured?key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=20&locale=uk_UA`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            displayGifs(data.results);
+        } else {
+            gifLibrary.innerHTML = '<div class="gif-error">Не вдалося завантажити GIF</div>';
+        }
+    } catch (error) {
+        console.error('Tenor API error:', error);
+        gifLibrary.innerHTML = '<div class="gif-error">Помилка завантаження GIF</div>';
+    }
+}
+
+async function searchGifs() {
+    const query = gifSearchInput.value.trim();
+    if (!query) {
+        gifLibrary.innerHTML = '<div class="gif-loading">Введіть запит для пошуку 🔍</div>';
+        return;
+    }
+    
+    gifLibrary.innerHTML = '<div class="gif-loading">Пошук GIF...</div>';
+    
+    try {
+        const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${TENOR_API_KEY}&client_key=${TENOR_CLIENT_KEY}&limit=20&locale=uk_UA`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            displayGifs(data.results);
+        } else {
+            gifLibrary.innerHTML = '<div class="gif-error">Нічого не знайдено 😢</div>';
+        }
+    } catch (error) {
+        console.error('Tenor API error:', error);
+        gifLibrary.innerHTML = '<div class="gif-error">Помилка пошуку GIF</div>';
+    }
+}
+
+function displayGifs(results) {
+    gifLibrary.innerHTML = '';
+    results.forEach(gif => {
+        const img = document.createElement('img');
+        // Використовуємо tinygif для превью (економія трафіку)
+        img.src = gif.media_formats.tinygif.url;
+        // Зберігаємо повний URL в data-атрибуті
+        img.dataset.gifUrl = gif.media_formats.gif.url;
+        img.className = 'gif-item';
+        img.alt = gif.content_description || 'GIF';
+        img.loading = 'lazy';
+        gifLibrary.appendChild(img);
+    });
+}
+
+function loadMyGifs() {
+    gifLibrary.innerHTML = '<div class="gif-loading">Завантаження ваших GIF...</div>';
+    socket.emit('load_my_gifs');
+}
+
+// ===== PASTE SUPPORT =====
 function setupPasteSupport() {
-    input.addEventListener('paste', function(e) {
+    input.addEventListener('paste', async function(e) {
         if (!activeChatRecipientId) return;
         
         const items = (e.clipboardData || e.originalEvent.clipboardData).items;
         console.log('Paste event, items:', items.length);
         
+        // Перевіряємо картинки
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            console.log('Item type:', item.type);
             
             if (item.type.indexOf('image') !== -1) {
                 e.preventDefault();
@@ -65,10 +168,27 @@ function setupPasteSupport() {
                 }
             }
         }
+        
+        // Перевіряємо текст (можливо це URL гіфки)
+        if (items.length > 0 && items[0].type === 'text/plain') {
+            items[0].getAsString(text => {
+                if (isGifUrl(text)) {
+                    e.preventDefault();
+                    sendGif(text);
+                }
+            });
+        }
     });
 }
 
-// ===== DRAG & DROP SUPPORT =====
+function isGifUrl(url) {
+    return url.match(/\.(gif|gifv)$/i) || 
+           url.includes('tenor.com') || 
+           url.includes('giphy.com') ||
+           url.includes('media.tenor.com');
+}
+
+// ===== DRAG & DROP =====
 function setupDragAndDrop() {
     const chatWindow = document.getElementById('chat_window');
     
@@ -93,7 +213,6 @@ function setupDragAndDrop() {
         
         const files = e.dataTransfer.files;
         if (files.length > 0) {
-            console.log('File dropped:', files[0].type);
             uploadFile(files[0]);
         }
     });
@@ -109,9 +228,8 @@ function renderUserList(users, onlineIds) {
         item.className = 'user-item';
         item.dataset.id = user.id;
         item.dataset.username = user.username;
-        if (isOnline) {
-            item.classList.add('online');
-        }
+        if (isOnline) item.classList.add('online');
+        
         item.innerHTML = `
             <span class="status-dot"></span>
             <div class="user-info">
@@ -152,20 +270,11 @@ function handleUserClick(e) {
     const newRecipientId = parseInt(clickedUser.dataset.id, 10);
     const newUsername = clickedUser.dataset.username;
     
-    console.log('Switching to chat with:', newRecipientId, typeof newRecipientId);
+    if (newRecipientId === activeChatRecipientId) return;
     
-    if (newRecipientId === activeChatRecipientId) {
-        console.log('Same chat, ignoring');
-        return;
-    }
-    
-    if (activeUserItem) {
-        activeUserItem.classList.remove('active');
-    }
+    if (activeUserItem) activeUserItem.classList.remove('active');
     
     activeChatRecipientId = newRecipientId;
-    console.log('activeChatRecipientId set to:', activeChatRecipientId, typeof activeChatRecipientId);
-    
     activeUserItem = clickedUser;
     activeUserItem.classList.add('active');
     chatTitle.innerText = 'Чат з: ' + newUsername;
@@ -193,9 +302,7 @@ function renderChatHistory(history) {
         messages.innerHTML = '<li class="status">Повідомлень ще немає.</li>';
         return;
     }
-    for (const msg of history) {
-        renderMessage(msg, false);
-    }
+    history.forEach(msg => renderMessage(msg, false));
     scrollToBottom();
 }
 
@@ -215,10 +322,8 @@ function renderMessage(msgData, shouldScroll = true) {
     let messageContent = '';
     switch(msgData.media_type) {
         case 'image':
-            messageContent = `<img src="${msgData.media_url}" alt="Зображення" class="chat-image">`;
-            break;
         case 'gif':
-            messageContent = `<img src="${msgData.media_url || msgData.text}" alt="GIF" class="chat-image">`;
+            messageContent = `<img src="${msgData.media_url || msgData.text}" alt="Зображення" class="chat-image">`;
             break;
         case 'video':
             messageContent = `<video src="${msgData.media_url}" class="chat-video" controls></video>`;
@@ -242,9 +347,7 @@ function renderMessage(msgData, shouldScroll = true) {
         </span>
     `;
     messages.appendChild(item);
-    if (shouldScroll) {
-        scrollToBottom();
-    }
+    if (shouldScroll) scrollToBottom();
 }
 
 function scrollToBottom() {
@@ -253,12 +356,7 @@ function scrollToBottom() {
 
 function sendMessage() {
     const text = input.value.trim();
-    if (!text || !activeChatRecipientId) {
-        console.log('Cannot send: text or recipient missing', text, activeChatRecipientId);
-        return;
-    }
-    
-    console.log('Sending message to:', activeChatRecipientId, typeof activeChatRecipientId);
+    if (!text || !activeChatRecipientId) return;
     
     let payload = {
         'text': null,
@@ -267,7 +365,7 @@ function sendMessage() {
         'recipient_id': activeChatRecipientId
     };
 
-    if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view') || text.includes('giphy.com/media'))) {
+    if (isGifUrl(text)) {
         payload.media_type = 'gif';
         payload.media_url = text;
     } else {
@@ -277,6 +375,17 @@ function sendMessage() {
     
     socket.emit('send_message', payload);
     input.value = "";
+}
+
+function sendGif(gifUrl) {
+    if (!activeChatRecipientId) return;
+    
+    socket.emit('send_message', {
+        'text': null,
+        'media_url': gifUrl,
+        'media_type': 'gif',
+        'recipient_id': activeChatRecipientId
+    });
 }
 
 function handleInputKeypress(e) {
@@ -293,7 +402,7 @@ function uploadFile(file) {
     
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
-    let text = "<i>Завантаження файлу...</i>";
+    let text = "<i>Завантаження...</i>";
     if (isImage) text = "<i>Завантаження фото...</i>";
     if (isVideo) text = "<i>Завантаження відео...</i>";
     
@@ -305,29 +414,28 @@ function uploadFile(file) {
     fetch('/upload', { method: 'POST', body: formData })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            console.log('Upload success');
-        } else {
+        if (!data.success) {
             alert('Помилка завантаження: ' + data.error);
         }
     })
-    .catch(error => console.error('Fetch error:', error));
+    .catch(error => console.error('Upload error:', error));
 }
 
 function handleFileSelect(e) {
     const file = e.target.files[0];
-    if (file) {
-        uploadFile(file);
-    }
+    if (file) uploadFile(file);
     e.target.value = null;
 }
 
 // ===== GIF MODAL =====
 function openGifModal() {
     if (gifButton.disabled) return;
-    gifLibrary.innerHTML = '<span class="status">Завантаження GIF...</span>';
     gifModal.classList.add('modal-visible');
-    socket.emit('load_my_gifs');
+    
+    // Завантажуємо тренди за замовчуванням
+    if (currentGifTab === 'trending') {
+        loadTrendingGifs();
+    }
 }
 
 function closeGifModal() {
@@ -335,20 +443,14 @@ function closeGifModal() {
 }
 
 function handleModalClick(e) {
-    if (e.target === gifModal) {
-        closeGifModal();
-    }
+    if (e.target === gifModal) closeGifModal();
 }
 
 function handleGifSelect(e) {
-    if (e.target.tagName === 'IMG') {
-        const gifUrl = e.target.src;
-        socket.emit('send_message', {
-            'text': null,
-            'media_url': gifUrl,
-            'media_type': 'gif',
-            'recipient_id': activeChatRecipientId
-        });
+    if (e.target.tagName === 'IMG' && e.target.classList.contains('gif-item')) {
+        // Використовуємо повний URL з data-атрибута або src
+        const gifUrl = e.target.dataset.gifUrl || e.target.src;
+        sendGif(gifUrl);
         closeGifModal();
     }
 }
@@ -384,55 +486,29 @@ function showNotification(title, body) {
 }
 
 // ===== SOCKET.IO HANDLERS =====
-socket.on('connect', function() {
-    console.log('Socket connected');
-});
-
-socket.on('disconnect', function() {
-    console.log('Socket disconnected');
-});
-
-socket.on('users_list', function(data) {
-    renderUserList(data.users, data.online_ids);
-});
+socket.on('connect', () => console.log('Socket connected'));
+socket.on('disconnect', () => console.log('Socket disconnected'));
+socket.on('users_list', data => renderUserList(data.users, data.online_ids));
 
 socket.on('new_message', function(data) {
-    console.log('Received new_message:', data);
-    
     const senderId = parseInt(data.sender_id, 10);
     const recipientId = parseInt(data.recipient_id, 10);
+    const chatPartnerId = senderId === currentUserId ? recipientId : senderId;
     
-    let chatPartnerId;
-    if (senderId === currentUserId) {
-        chatPartnerId = recipientId;
-    } else {
-        chatPartnerId = senderId;
-    }
-    
-    console.log('Message chatPartnerId:', chatPartnerId, 'activeChatRecipientId:', activeChatRecipientId);
-    
-    if (!chatHistories[chatPartnerId]) {
-        chatHistories[chatPartnerId] = [];
-    }
+    if (!chatHistories[chatPartnerId]) chatHistories[chatPartnerId] = [];
     chatHistories[chatPartnerId].push(data);
     
     if (chatPartnerId === activeChatRecipientId) {
-        console.log('Message is for active chat, rendering');
-        if (messages.querySelector('.status')) {
-            messages.innerHTML = '';
-        }
+        if (messages.querySelector('.status')) messages.innerHTML = '';
         renderMessage(data, true);
         if (senderId !== currentUserId) {
             socket.emit('mark_as_read', { 'chat_partner_id': senderId });
         }
-    } else {
-        console.log('Message is NOT for active chat');
     }
 });
 
 socket.on('unread_message', function(data) {
     const senderId = parseInt(data.sender_id, 10);
-    
     if (senderId !== activeChatRecipientId) {
         const newCount = (unreadCounts[senderId] || 0) + 1;
         updateUnreadCount(senderId, newCount);
@@ -449,10 +525,7 @@ socket.on('unread_message', function(data) {
 
 socket.on('history_loaded', function(data) {
     const partnerId = parseInt(data.partner_id, 10);
-    console.log('History loaded for:', partnerId, 'activeChatRecipientId:', activeChatRecipientId);
-    
     chatHistories[partnerId] = data.history;
-    
     if (partnerId === activeChatRecipientId) {
         renderChatHistory(data.history);
     }
@@ -463,9 +536,7 @@ socket.on('messages_were_read', function(data) {
     
     if (chatHistories[partnerId]) {
         chatHistories[partnerId].forEach(msg => {
-            if (data.message_ids.includes(msg.id)) {
-                msg.is_read = true;
-            }
+            if (data.message_ids.includes(msg.id)) msg.is_read = true;
         });
     }
     
@@ -493,16 +564,14 @@ socket.on('user_status_change', function(data) {
         lastSeenEl.innerText = 'Онлайн';
     } else {
         userItem.classList.remove('online');
-        if (allUsers[userId]) {
-            allUsers[userId].last_seen = data.last_seen;
-        }
+        if (allUsers[userId]) allUsers[userId].last_seen = data.last_seen;
         lastSeenEl.innerText = formatLastSeen(data.last_seen);
     }
 });
 
 socket.on('my_gifs_loaded', function(data) {
     if (data.gifs.length === 0) {
-        gifLibrary.innerHTML = '<span class="status">Ви ще не відправляли GIF.</span>';
+        gifLibrary.innerHTML = '<div class="gif-loading">Ви ще не відправляли GIF 😢</div>';
         return;
     }
     gifLibrary.innerHTML = '';

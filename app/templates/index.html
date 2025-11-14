@@ -21,11 +21,31 @@
         </div>
     </div>
     
+    <!-- GIF Modal -->
     <div id="gif-modal">
         <div id="gif-modal-content">
-            <h4>Мої GIF-ки</h4>
-            <div id="gif-library"></div>
-            <button id="gif-close-button">Закрити</button>
+            <div id="gif-modal-header">
+                <h4>GIF Галерея</h4>
+                <button id="gif-close-button">✕</button>
+            </div>
+            
+            <!-- Табы -->
+            <div id="gif-tabs">
+                <button class="gif-tab active" data-tab="trending">🔥 Тренди</button>
+                <button class="gif-tab" data-tab="search">🔍 Пошук</button>
+                <button class="gif-tab" data-tab="my">💾 Мої</button>
+            </div>
+            
+            <!-- Пошук -->
+            <div id="gif-search-container" style="display: none;">
+                <input type="text" id="gif-search-input" placeholder="Шукати GIF...">
+                <button id="gif-search-button">Шукати</button>
+            </div>
+            
+            <!-- Бібліотека GIF -->
+            <div id="gif-library">
+                <div class="gif-loading">Завантаження...</div>
+            </div>
         </div>
     </div>
     
