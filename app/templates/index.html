@@ -31,7 +31,6 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        // === ФІКС: Повертаємо кеш ===
         const chatHistories = {};
         const unreadCounts = {};
         const allUsers = {}; 
@@ -111,18 +110,26 @@
             }
         }
 
-        // === ФІКС: Повертаємо логіку кешу ===
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
             const newRecipientId = clickedUser.dataset.id;
             const newUsername = clickedUser.dataset.username;
-            if (newRecipientId == activeChatRecipientId) return; 
+            
+            // === ОСЬ ВІН, ГОЛОВНИЙ ФІКС ===
+            // Ми перетворюємо "рядок" на "число"
+            const newRecipientIdInt = parseInt(newRecipientId, 10);
+            
+            if (newRecipientIdInt == activeChatRecipientId) return; // (int == int)
+            
             if (activeUserItem) {
                 activeUserItem.classList.remove('active');
             }
-            activeChatRecipientId = newRecipientId;
+            
+            // Зберігаємо ID як ЧИСЛО
+            activeChatRecipientId = newRecipientIdInt; 
+            
             activeUserItem = clickedUser;
             activeUserItem.classList.add('active');
             chatTitle.innerText = 'Чат з: ' + newUsername;
@@ -132,15 +139,14 @@
             fileButton.classList.add('active');
             gifButton.disabled = false;
             
-            updateUnreadCount(newRecipientId, 0);
-            socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
+            updateUnreadCount(activeChatRecipientId, 0); // (int)
+            socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId }); // (int)
 
-            // === ФІКС: Знову використовуємо кеш ===
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(chatHistories[activeChatRecipientId]);
             } else {
                 messages.innerHTML = '<li class="status">Завантаження історії...</li>';
-                socket.emit('load_history', { 'partner_id': activeChatRecipientId });
+                socket.emit('load_history', { 'partner_id': activeChatRecipientId }); // (int)
             }
         });
         
@@ -175,7 +181,6 @@
                     messageContent = `<img src="${msgData.media_url}" alt="Зображення" class="chat-image">`;
                     break;
                 case 'gif':
-                    // ФІКС: Гіфки тепер теж беруться з 'media_url'
                     messageContent = `<img src="${msgData.media_url || msgData.text}" alt="GIF" class="chat-image">`;
                     break;
                 case 'video':
@@ -209,7 +214,6 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
-        // === ФІКС: "Розумна" відправка ===
         function sendMessage() {
             const text = input.value.trim();
             if (!text || !activeChatRecipientId) return;
@@ -221,10 +225,9 @@
                 'recipient_id': activeChatRecipientId
             };
 
-            // Перевіряємо, чи це не GIF з клавіатури
             if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view') || text.includes('giphy.com/media'))) {
                 payload.media_type = 'gif';
-                payload.media_url = text; // <-- Змінено (з text на media_url)
+                payload.media_url = text;
             } else {
                 payload.media_type = 'text';
                 payload.text = text;
@@ -309,7 +312,6 @@
             });
         });
 
-        // === ФІКС: Оновлюємо кеш ===
         socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
@@ -323,7 +325,7 @@
             }
             chatHistories[chatPartnerId].push(data);
             
-            if (chatPartnerId == activeChatRecipientId) {
+            if (chatPartnerId == activeChatRecipientId) { // (int == int) - тепер це працює
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
                 }
@@ -335,7 +337,7 @@
         });
         
         socket.on('unread_message', function(data) {
-            if (data.sender_id != activeChatRecipientId) {
+            if (data.sender_id != activeChatRecipientId) { // (int != int)
                 const newCount = (unreadCounts[data.sender_id] || 0) + 1;
                 updateUnreadCount(data.sender_id, newCount);
                 
@@ -349,18 +351,16 @@
             }
         });
         
-        // === ФІКС: Зберігаємо в кеш ===
         socket.on('history_loaded', function(data) {
-            const partnerId = data.partner_id;
+            const partnerId = data.partner_id; // (int)
             chatHistories[partnerId] = data.history; 
-            if (partnerId == activeChatRecipientId) {
+            if (partnerId == activeChatRecipientId) { // (int == int)
                 renderChatHistory(data.history);
             }
         });
         
-        // === ФІКС: Оновлюємо і кеш, і UI ===
         socket.on('messages_were_read', function(data) {
-            const partnerId = data.reader_id;
+            const partnerId = data.reader_id; // (int)
             
             if (chatHistories[partnerId]) {
                 chatHistories[partnerId].forEach(msg => {
@@ -370,7 +370,7 @@
                 });
             }
             
-            if (partnerId == activeChatRecipientId) {
+            if (partnerId == activeChatRecipientId) { // (int == int)
                 data.message_ids.forEach(messageId => {
                     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
                     if (msgElement) {
@@ -406,6 +406,7 @@
     </script>
     
     <style>
+        /* (Всі стилі залишаються без змін) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
