@@ -38,8 +38,11 @@
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
-        let activeChatRecipientId = null; 
+        
+        // ===== КЛЮЧОВИЙ ФІКС: activeChatRecipientId ЗАВЖДИ NUMBER =====
+        let activeChatRecipientId = null; // ЗАВЖДИ буде number або null
         let activeUserItem = null; 
+        
         const socket = io();
         const messages = document.getElementById('messages');
         const input = document.getElementById('message_input');
@@ -52,6 +55,21 @@
         const gifModal = document.getElementById('gif-modal');
         const gifLibrary = document.getElementById('gif-library');
         const gifCloseButton = document.getElementById('gif-close-button');
+
+        function updateUnreadCount(userId, count) {
+            userId = parseInt(userId, 10);
+            unreadCounts[userId] = count;
+            const userItem = findUserListItem(userId);
+            if (!userItem) return;
+            
+            const badge = userItem.querySelector('.unread-badge');
+            if (count > 0) {
+                badge.innerText = count;
+                badge.style.display = 'block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
 
         function renderUserList(users, onlineIds) {
             userList.innerHTML = ''; 
@@ -94,6 +112,7 @@
         }
 
         function findUserListItem(userId) {
+            userId = parseInt(userId, 10);
             return userList.querySelector(`.user-item[data-id="${userId}"]`);
         }
         
@@ -114,21 +133,26 @@
             requestNotificationPermission(); 
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
-            const newRecipientId = clickedUser.dataset.id;
+            
+            // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ parseInt =====
+            const newRecipientId = parseInt(clickedUser.dataset.id, 10);
             const newUsername = clickedUser.dataset.username;
             
-            // === ОСЬ ВІН, ГОЛОВНИЙ ФІКС ===
-            // Ми перетворюємо "рядок" на "число"
-            const newRecipientIdInt = parseInt(newRecipientId, 10);
+            console.log('Switching to chat with:', newRecipientId, typeof newRecipientId); // DEBUG
             
-            if (newRecipientIdInt == activeChatRecipientId) return; // (int == int)
+            // Якщо це той самий чат - ігноруємо
+            if (newRecipientId === activeChatRecipientId) {
+                console.log('Same chat, ignoring');
+                return;
+            }
             
             if (activeUserItem) {
                 activeUserItem.classList.remove('active');
             }
             
-            // Зберігаємо ID як ЧИСЛО
-            activeChatRecipientId = newRecipientIdInt; 
+            // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ number =====
+            activeChatRecipientId = newRecipientId; 
+            console.log('activeChatRecipientId set to:', activeChatRecipientId, typeof activeChatRecipientId); // DEBUG
             
             activeUserItem = clickedUser;
             activeUserItem.classList.add('active');
@@ -139,14 +163,14 @@
             fileButton.classList.add('active');
             gifButton.disabled = false;
             
-            updateUnreadCount(activeChatRecipientId, 0); // (int)
-            socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId }); // (int)
+            updateUnreadCount(activeChatRecipientId, 0);
+            socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
 
             if (chatHistories[activeChatRecipientId]) {
                 renderChatHistory(chatHistories[activeChatRecipientId]);
             } else {
                 messages.innerHTML = '<li class="status">Завантаження історії...</li>';
-                socket.emit('load_history', { 'partner_id': activeChatRecipientId }); // (int)
+                socket.emit('load_history', { 'partner_id': activeChatRecipientId });
             }
         });
         
@@ -171,7 +195,7 @@
                 day: '2-digit', month: 'short' 
             });
 
-            if (msgData.sender_id == currentUserId) {
+            if (msgData.sender_id === currentUserId) {
                 item.classList.add('my-message');
             }
             
@@ -192,7 +216,7 @@
             }
             
             let readStatus = '';
-            if (msgData.sender_id == currentUserId) {
+            if (msgData.sender_id === currentUserId) {
                 const readClass = msgData.is_read ? 'read' : '';
                 readStatus = `<span class="read-status ${readClass}">${msgData.is_read ? '✓✓' : '✓'}</span>`;
             }
@@ -216,13 +240,18 @@
 
         function sendMessage() {
             const text = input.value.trim();
-            if (!text || !activeChatRecipientId) return;
+            if (!text || !activeChatRecipientId) {
+                console.log('Cannot send: text or recipient missing', text, activeChatRecipientId);
+                return;
+            }
+            
+            console.log('Sending message to:', activeChatRecipientId, typeof activeChatRecipientId); // DEBUG
             
             let payload = {
                 'text': null,
                 'media_url': null,
                 'media_type': 'text',
-                'recipient_id': activeChatRecipientId
+                'recipient_id': activeChatRecipientId // Вже number
             };
 
             if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view') || text.includes('giphy.com/media'))) {
@@ -236,6 +265,7 @@
             socket.emit('send_message', payload);
             input.value = "";
         }
+        
         sendButton.onclick = sendMessage;
         input.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
@@ -278,6 +308,7 @@
             gifModal.classList.add('modal-visible');
             socket.emit('load_my_gifs');
         });
+        
         gifCloseButton.addEventListener('click', () => gifModal.classList.remove('modal-visible'));
         gifModal.addEventListener('click', (e) => {
             if (e.target === gifModal) {
@@ -312,34 +343,49 @@
             });
         });
 
+        // ===== КЛЮЧОВИЙ ФІКС: ЗАВЖДИ parseInt для порівняння =====
         socket.on('new_message', function(data) {
+            console.log('Received new_message:', data); // DEBUG
+            
+            // Перетворюємо ВСІ ID в числа
+            const senderId = parseInt(data.sender_id, 10);
+            const recipientId = parseInt(data.recipient_id, 10);
+            
             let chatPartnerId;
-            if (data.sender_id == currentUserId) {
-                chatPartnerId = data.recipient_id;
+            if (senderId === currentUserId) {
+                chatPartnerId = recipientId;
             } else {
-                chatPartnerId = data.sender_id;
+                chatPartnerId = senderId;
             }
+            
+            console.log('Message chatPartnerId:', chatPartnerId, 'activeChatRecipientId:', activeChatRecipientId); // DEBUG
             
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
             chatHistories[chatPartnerId].push(data);
             
-            if (chatPartnerId == activeChatRecipientId) { // (int == int) - тепер це працює
+            // ===== КЛЮЧОВИЙ ФІКС: === замість == =====
+            if (chatPartnerId === activeChatRecipientId) {
+                console.log('Message is for active chat, rendering'); // DEBUG
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
                 }
                 renderMessage(data, true);
-                if (data.sender_id != currentUserId) {
-                    socket.emit('mark_as_read', { 'chat_partner_id': data.sender_id });
+                if (senderId !== currentUserId) {
+                    socket.emit('mark_as_read', { 'chat_partner_id': senderId });
                 }
+            } else {
+                console.log('Message is NOT for active chat'); // DEBUG
             }
         });
         
         socket.on('unread_message', function(data) {
-            if (data.sender_id != activeChatRecipientId) { // (int != int)
-                const newCount = (unreadCounts[data.sender_id] || 0) + 1;
-                updateUnreadCount(data.sender_id, newCount);
+            const senderId = parseInt(data.sender_id, 10);
+            
+            if (senderId !== activeChatRecipientId) {
+                const newCount = (unreadCounts[senderId] || 0) + 1;
+                updateUnreadCount(senderId, newCount);
                 
                 let body = "[Нове повідомлення]";
                 if(data.media_type === 'text') body = data.text;
@@ -352,15 +398,18 @@
         });
         
         socket.on('history_loaded', function(data) {
-            const partnerId = data.partner_id; // (int)
+            const partnerId = parseInt(data.partner_id, 10);
+            console.log('History loaded for:', partnerId, 'activeChatRecipientId:', activeChatRecipientId); // DEBUG
+            
             chatHistories[partnerId] = data.history; 
-            if (partnerId == activeChatRecipientId) { // (int == int)
+            
+            if (partnerId === activeChatRecipientId) {
                 renderChatHistory(data.history);
             }
         });
         
         socket.on('messages_were_read', function(data) {
-            const partnerId = data.reader_id; // (int)
+            const partnerId = parseInt(data.reader_id, 10);
             
             if (chatHistories[partnerId]) {
                 chatHistories[partnerId].forEach(msg => {
@@ -370,7 +419,7 @@
                 });
             }
             
-            if (partnerId == activeChatRecipientId) { // (int == int)
+            if (partnerId === activeChatRecipientId) {
                 data.message_ids.forEach(messageId => {
                     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
                     if (msgElement) {
@@ -385,7 +434,8 @@
         });
         
         socket.on('user_status_change', function(data) {
-            const userItem = findUserListItem(data.user_id);
+            const userId = parseInt(data.user_id, 10);
+            const userItem = findUserListItem(userId);
             if (!userItem) return;
             const lastSeenEl = userItem.querySelector('.last-seen');
             if (data.status === 'online') {
@@ -393,8 +443,8 @@
                 lastSeenEl.innerText = 'Онлайн';
             } else {
                 userItem.classList.remove('online');
-                if (allUsers[data.user_id]) {
-                    allUsers[data.user_id].last_seen = data.last_seen;
+                if (allUsers[userId]) {
+                    allUsers[userId].last_seen = data.last_seen;
                 }
                 lastSeenEl.innerText = formatLastSeen(data.last_seen);
             }
@@ -403,10 +453,17 @@
         socket.on('users_list', function(data) {
             renderUserList(data.users, data.online_ids);
         });
+        
+        socket.on('connect', function() {
+            console.log('Socket connected');
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Socket disconnected');
+        });
     </script>
     
     <style>
-        /* (Всі стилі залишаються без змін) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
