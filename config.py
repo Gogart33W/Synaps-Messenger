@@ -1,8 +1,8 @@
 # config.py
 import os
 import sqlalchemy.pool
-import cloudinary
-from dotenv import load_dotenv
+import cloudinary # pyright: ignore[reportMissingImports]
+from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '.env'))

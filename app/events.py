@@ -13,19 +13,15 @@ def handle_connect():
     if current_user.is_authenticated:
         join_room(current_user.id)
         online_users.add(current_user.id)
-        
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
-        # === ОСЬ ФІКС ЧАСУ (Баг 2) ===
         ts = current_user.last_seen.isoformat()
-        if not ts.endswith('Z') and '+' not in ts:
-            ts += 'Z'
+        if not ts.endswith('Z') and '+' not in ts: ts += 'Z'
         
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'online', 'last_seen': ts}, 
              broadcast=True)
-        
         emit('status', {'text': f'Ви підключені як {current_user.username}'} )
         
         users_query = User.query.filter(User.id != current_user.id).all()
@@ -39,14 +35,11 @@ def handle_connect():
 def handle_disconnect():
     if current_user.is_authenticated:
         online_users.discard(current_user.id)
-        
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
-        # === ОСЬ ФІКС ЧАСУ (Баг 2) ===
         ts = current_user.last_seen.isoformat()
-        if not ts.endswith('Z') and '+' not in ts:
-            ts += 'Z'
+        if not ts.endswith('Z') and '+' not in ts: ts += 'Z'
         
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'offline', 'last_seen': ts}, 
@@ -55,14 +48,16 @@ def handle_disconnect():
 @socketio.on('send_message')
 def handle_send_message(data):
     if not current_user.is_authenticated: return
-    text = data.get('text', '')
+    
     recipient_id = data.get('recipient_id')
-    if not text or not recipient_id: return
-        
+    if not recipient_id: return
+    
     new_message = Message(
-        text=text,
         sender_id=current_user.id,
         recipient_id=int(recipient_id),
+        text=data.get('text'), # Може бути None
+        media_url=data.get('media_url'), # Може бути None
+        media_type=data.get('media_type', 'text'),
         is_read=False
     )
     db.session.add(new_message)
@@ -98,13 +93,17 @@ def handle_load_history(data):
 @socketio.on('mark_as_read')
 def handle_mark_as_read(data):
     if not current_user.is_authenticated: return
-    sender_id = data.get('sender_id') 
-    if not sender_id: return
-    recipient_id = current_user.id 
+    
+    # === ФІКС ЛОГІКИ ГАЛОЧОК ===
+    # 'chat_partner_id' - це той, з ким я говорю
+    chat_partner_id = data.get('chat_partner_id')
+    if not chat_partner_id: return
+    
+    my_id = current_user.id 
     
     messages_to_update = Message.query.filter(
-        Message.sender_id == sender_id,
-        Message.recipient_id == recipient_id,
+        Message.sender_id == chat_partner_id, # Від нього
+        Message.recipient_id == my_id,     # До мене
         Message.is_read == False
     ).all()
     
@@ -115,6 +114,23 @@ def handle_mark_as_read(data):
         
     if updated_message_ids:
         db.session.commit()
+        # Повідомляємо його (partner_id), що я (my_id) прочитав
         emit('messages_were_read', 
-             {'message_ids': updated_message_ids, 'sender_id': int(sender_id)}, 
-             room=int(sender_id))
+             {'message_ids': updated_message_ids, 'reader_id': my_id}, 
+             room=int(chat_partner_id))
+
+# === НОВА ФІЧА: "Бібліотека GIF" ===
+@socketio.on('load_my_gifs')
+def handle_load_my_gifs():
+    if not current_user.is_authenticated: return
+    
+    # Знаходимо 100 останніх унікальних гіфок, які Я відправляв
+    gifs = db.session.query(Message.media_url).filter(
+        Message.sender_id == current_user.id,
+        Message.media_type == 'gif'
+    ).distinct().order_by(Message.timestamp.desc()).limit(100).all()
+    
+    # all() повертає [(url1,), (url2,)]... нам треба [url1, url2]
+    gif_urls = [gif[0] for gif in gifs]
+    
+    emit('my_gifs_loaded', {'gifs': gif_urls})

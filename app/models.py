@@ -27,10 +27,8 @@ class User(UserMixin, db.Model):
         ts = None 
         if self.last_seen:
             ts = self.last_seen.isoformat()
-            # === ОСЬ ФІКС ЧАСУ (який я пропустив) ===
             if not ts.endswith('Z') and '+' not in ts:
                 ts += 'Z'
-            
         return {
             'id': self.id,
             'username': self.username,
@@ -39,16 +37,22 @@ class User(UserMixin, db.Model):
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    
+    # === ЗМІНИ ДЛЯ МІГРАЦІЇ ===
+    # 'text' тепер зберігає і 'gif-url'
     text = db.Column(db.String(1024), nullable=True) 
-    image_url = db.Column(db.String(512), nullable=True)
-    is_image = db.Column(db.Boolean, default=False)
+    # 'image_url' -> 'media_url' (для фото ТА відео)
+    media_url = db.Column(db.String(512), nullable=True)
+    # 'is_image' -> 'media_type' (text, image, video, gif)
+    media_type = db.Column(db.String(50), default='text', nullable=False)
+
     is_read = db.Column(db.Boolean, default=False, nullable=False)
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow) 
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
     def __repr__(self):
-        return f'<Message {self.text[:50] if self.text else "Image"}>'
+        return f'<Message {self.media_type}: {self.text[:50]}>'
     
     def to_dict(self):
         ts = self.timestamp.isoformat()
@@ -56,8 +60,9 @@ class Message(db.Model):
             ts += 'Z'
         return {
             'id': self.id,
-            'text': self.text, 'image_url': self.image_url,
-            'is_image': self.is_image,
+            'text': self.text, 
+            'media_url': self.media_url,   # <-- Оновлено
+            'media_type': self.media_type, # <-- Оновлено
             'timestamp': ts, 
             'sender_id': self.sender_id,
             'sender_username': self.sender.username,

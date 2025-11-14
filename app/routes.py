@@ -2,7 +2,7 @@
 from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader
-from datetime import datetime, timezone # <-- НОВИЙ ІМПОРТ
+from datetime import datetime, timezone
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -18,12 +18,8 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    # === ОНОВЛЕНА ЛОГІКА ===
-    # Завантажуємо всіх юзерів (окрім себе) і 
-    # одразу перетворюємо їх на список словників
     users_query = User.query.filter(User.id != current_user.id).all()
     users_data = [user.to_dict() for user in users_query]
-    
     return render_template('index.html', users_data=users_data) 
 
 @main.route('/upload', methods=['POST'])
@@ -35,21 +31,37 @@ def upload_file():
     recipient_id = request.form.get('recipient_id')
     if file.filename == '' or not recipient_id:
         return jsonify({"error": "No selected file or recipient"}), 400
+
+    # === ОНОВЛЕНА ЛОГІКА ТИПІВ ===
+    file_type = 'image' # За замовчуванням
+    if file.mimetype.startswith('video/'):
+        file_type = 'video'
+    elif file.mimetype == 'image/gif':
+        file_type = 'gif'
+
     try:
-        upload_result = cloudinary.uploader.upload(file)
-        image_url = upload_result.get('secure_url')
-        if not image_url:
+        # Для Cloudinary, 'video' та 'image' (включно з gif) - це "image" resource_type
+        # (Якщо ми не хочемо платити за відео-транскодинг, що ми не хочемо)
+        resource_type = 'image'
+        if file_type == 'video':
+             resource_type = 'video'
+
+        upload_result = cloudinary.uploader.upload(file, resource_type=resource_type)
+        
+        media_url = upload_result.get('secure_url')
+        if not media_url:
              return jsonify({"error": "Upload failed"}), 500
         
         new_message = Message(
             sender_id=current_user.id,
             recipient_id=int(recipient_id),
-            image_url=image_url,
-            is_image=True,
+            media_url=media_url,
+            media_type=file_type,
             text=None
         )
         db.session.add(new_message)
         db.session.commit()
+
         message_data = new_message.to_dict()
         socketio.emit('new_message', message_data, room=int(recipient_id))
         socketio.emit('new_message', message_data, room=current_user.id)
@@ -68,25 +80,18 @@ def login():
         if user is None or not user.check_password(form.password.data):
             flash('Неправильне ім\'я користувача або пароль')
             return redirect(url_for('main.login'))
-        
         login_user(user, remember=form.remember_me.data)
-        
-        # === ОНОВЛЮЄМО last_seen ПРИ ЛОГІНІ ===
         user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
-        
         flash('Вхід успішний!')
         return redirect(url_for('main.index'))
     return render_template('login.html', form=form)
 
 @main.route('/logout')
 def logout():
-    # === ОНОВЛЮЄМО last_seen ПРИ ВИХОДІ ===
-    # (Це спрацює, тільки якщо юзер натисне "Вийти")
     if current_user.is_authenticated:
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
-    
     logout_user()
     flash('Ви вийшли з акаунту.')
     return redirect(url_for('main.login'))
