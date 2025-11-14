@@ -17,23 +17,23 @@ def handle_connect():
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
+        # === ОСЬ ФІКС ЧАСУ (Баг 2) ===
+        ts = current_user.last_seen.isoformat()
+        if not ts.endswith('Z') and '+' not in ts:
+            ts += 'Z'
+        
         emit('user_status_change', 
-             {'user_id': current_user.id, 'status': 'online', 'last_seen': current_user.last_seen.isoformat()}, 
+             {'user_id': current_user.id, 'status': 'online', 'last_seen': ts}, 
              broadcast=True)
+        
         emit('status', {'text': f'Ви підключені як {current_user.username}'} )
         
-        # === ОСЬ ФІКС ===
-        # Відправляємо список юзерів ОДРАЗУ при підключенні
         users_query = User.query.filter(User.id != current_user.id).all()
         users_data = [user.to_dict() for user in users_query]
-        
         emit('users_list', {
             'users': users_data,
             'online_ids': list(online_users)
         })
-        # === КІНЕЦЬ ФІКСУ ===
-    else:
-        print('Анонімний клієнт підключився.')
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -43,8 +43,13 @@ def handle_disconnect():
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
+        # === ОСЬ ФІКС ЧАСУ (Баг 2) ===
+        ts = current_user.last_seen.isoformat()
+        if not ts.endswith('Z') and '+' not in ts:
+            ts += 'Z'
+        
         emit('user_status_change', 
-             {'user_id': current_user.id, 'status': 'offline', 'last_seen': current_user.last_seen.isoformat()}, 
+             {'user_id': current_user.id, 'status': 'offline', 'last_seen': ts}, 
              broadcast=True)
 
 @socketio.on('send_message')
@@ -89,9 +94,6 @@ def handle_load_history(data):
         'partner_id': int(partner_id),
         'history': history_data
     })
-    
-    # === МИ ПРИБРАЛИ ЗВІДСИ emit('users_list') ===
-
 
 @socketio.on('mark_as_read')
 def handle_mark_as_read(data):
@@ -114,5 +116,5 @@ def handle_mark_as_read(data):
     if updated_message_ids:
         db.session.commit()
         emit('messages_were_read', 
-             {'message_ids': updated_message_ids, 'sender_id': sender_id}, 
+             {'message_ids': updated_message_ids, 'sender_id': int(sender_id)}, 
              room=int(sender_id))

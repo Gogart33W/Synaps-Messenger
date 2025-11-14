@@ -1,3 +1,5 @@
+{% endblock %}
+
 {% extends "base.html" %}
 {% block title %}Чат - Synaps{% endblock %}
 {% block content %}
@@ -22,9 +24,10 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        const chatHistories = {};
+        // === ГЛОБАЛЬНІ ЗМІННІ (БЕЗ chatHistories) ===
         const unreadCounts = {};
         const allUsers = {}; 
+        
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
@@ -66,30 +69,22 @@
             });
         }
         
-        // === ОНОВЛЕНА ФУНКЦІЯ (замість timeAgo) ===
         function formatLastSeen(isoString) {
             if (!isoString) {
                 return "був давно";
             }
-            
             const date = new Date(isoString);
             const now = new Date();
-            
             const timeOpts = { hour: '2-digit', minute: '2-digit' };
             
-            // Перевіряємо, чи це сьогодні
             if (date.toDateString() === now.toDateString()) {
                 return `був сьогодні о ${date.toLocaleString('uk-UA', timeOpts)}`;
             }
-            
-            // Перевіряємо, чи це вчора
             const yesterday = new Date(now);
             yesterday.setDate(now.getDate() - 1);
             if (date.toDateString() === yesterday.toDateString()) {
                 return `був вчора о ${date.toLocaleString('uk-UA', timeOpts)}`;
             }
-            
-            // Якщо давніше
             return `був ${date.toLocaleString('uk-UA', { day: '2-digit', month: 'short' })}`;
         }
 
@@ -110,6 +105,7 @@
             }
         }
 
+        // === ОНОВЛЕНА ЛОГІКА КЛІКУ (БЕЗ КЕШУ) ===
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
             const clickedUser = e.target.closest('.user-item');
@@ -132,17 +128,16 @@
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'sender_id': activeChatRecipientId });
 
-            if (chatHistories[activeChatRecipientId]) {
-                renderChatHistory(activeChatRecipientId);
-            } else {
-                messages.innerHTML = '<li class="status">Завантаження історії...</li>';
-                socket.emit('load_history', { 'partner_id': activeChatRecipientId });
-            }
+            // === ФІКС "ПУСТОГО ЧАТУ" (Баг 1) ===
+            // Ми більше не перевіряємо кеш.
+            // Ми ЗАВЖДИ просимо історію з сервера.
+            messages.innerHTML = '<li class="status">Завантаження історії...</li>';
+            socket.emit('load_history', { 'partner_id': activeChatRecipientId });
         });
         
-        function renderChatHistory(chatPartnerId) {
+        // === ОНОВЛЕНА ФУНКЦІЯ (приймає історію, а не ID) ===
+        function renderChatHistory(history) {
             messages.innerHTML = '';
-            const history = chatHistories[chatPartnerId] || [];
             if (history.length === 0) {
                  messages.innerHTML = '<li class="status">Повідомлень ще немає.</li>';
                  return;
@@ -251,6 +246,7 @@
             }
         }
 
+        // === ОНОВЛЕНИЙ ОБРОБНИК (БЕЗ КЕШУ) ===
         socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
@@ -258,11 +254,9 @@
             } else {
                 chatPartnerId = data.sender_id;
             }
-            if (!chatHistories[chatPartnerId]) {
-                chatHistories[chatPartnerId] = [];
-            }
-            chatHistories[chatPartnerId].push(data);
             
+            // Ми більше не кешуємо. 
+            // Просто рендеримо, якщо чат активний.
             if (chatPartnerId == activeChatRecipientId) {
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
@@ -283,39 +277,35 @@
             }
         });
         
+        // === ОНОВЛЕНИЙ ОБРОБНИК (БЕЗ КЕШУ) ===
         socket.on('history_loaded', function(data) {
-            const partnerId = data.partner_id;
-            chatHistories[partnerId] = data.history;
-            if (partnerId == activeChatRecipientId) {
-                renderChatHistory(partnerId);
+            // Ми не зберігаємо в кеш.
+            // Ми просто рендеримо, ЯКЩО це той чат, що ми чекаємо.
+            if (data.partner_id == activeChatRecipientId) {
+                renderChatHistory(data.history);
             }
         });
         
         socket.on('messages_were_read', function(data) {
-            data.message_ids.forEach(messageId => {
-                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-                if (msgElement) {
-                    const statusElement = msgElement.querySelector('.read-status');
-                    if (statusElement) {
-                        statusElement.innerHTML = '✓✓';
-                        statusElement.classList.add('read');
-                    }
-                }
-                const partnerId = data.sender_id;
-                if (chatHistories[partnerId]) {
-                    chatHistories[partnerId].forEach(msg => {
-                        if (data.message_ids.includes(msg.id)) {
-                            msg.is_read = true;
+            if (data.sender_id == activeChatRecipientId) {
+                data.message_ids.forEach(messageId => {
+                    const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
+                    if (msgElement) {
+                        const statusElement = msgElement.querySelector('.read-status');
+                        if (statusElement) {
+                            statusElement.innerHTML = '✓✓';
+                            statusElement.classList.add('read');
                         }
-                    });
-                }
-            });
+                    }
+                });
+            }
+            
+            // Ми більше не оновлюємо кеш, бо його немає
         });
         
         socket.on('user_status_change', function(data) {
             const userItem = findUserListItem(data.user_id);
             if (!userItem) return;
-            
             const lastSeenEl = userItem.querySelector('.last-seen');
             
             if (data.status === 'online') {
@@ -326,8 +316,6 @@
                 if (allUsers[data.user_id]) {
                     allUsers[data.user_id].last_seen = data.last_seen;
                 }
-                // === ОНОВЛЕНО ===
-                // Використовуємо нову функцію
                 lastSeenEl.innerText = formatLastSeen(data.last_seen);
             }
         });
@@ -338,7 +326,7 @@
     </script>
     
     <style>
-        /* ... (ВСІ СТИЛІ ЗАЛИШАЮТЬСЯ БЕЗ ЗМІН) ... */
+                /* ... (ВСІ СТИЛІ ЗАЛИШАЮТЬСЯ БЕЗ ЗМІН) ... */
         /* (Я залишаю їх тут, щоб файл був повний) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
