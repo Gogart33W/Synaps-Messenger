@@ -31,9 +31,11 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
+        // === ФІКС: Повертаємо кеш ===
         const chatHistories = {};
         const unreadCounts = {};
         const allUsers = {}; 
+        
         const wrapper = document.getElementById('content-wrapper');
         const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
         const currentUsername = "{{ current_user.username }}";
@@ -109,6 +111,7 @@
             }
         }
 
+        // === ФІКС: Повертаємо логіку кешу ===
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
             const clickedUser = e.target.closest('.user-item');
@@ -127,12 +130,18 @@
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
-            gifButton.disabled = false; 
+            gifButton.disabled = false;
             
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
-            messages.innerHTML = '<li class="status">Завантаження історії...</li>';
-            socket.emit('load_history', { 'partner_id': activeChatRecipientId });
+
+            // === ФІКС: Знову використовуємо кеш ===
+            if (chatHistories[activeChatRecipientId]) {
+                renderChatHistory(chatHistories[activeChatRecipientId]);
+            } else {
+                messages.innerHTML = '<li class="status">Завантаження історії...</li>';
+                socket.emit('load_history', { 'partner_id': activeChatRecipientId });
+            }
         });
         
         function renderChatHistory(history) {
@@ -166,8 +175,7 @@
                     messageContent = `<img src="${msgData.media_url}" alt="Зображення" class="chat-image">`;
                     break;
                 case 'gif':
-                    // ФІКС: Гіфки тепер теж беруться з 'media_url'
-                    messageContent = `<img src="${msgData.media_url}" alt="GIF" class="chat-image">`;
+                    messageContent = `<img src="${msgData.media_url || msgData.text}" alt="GIF" class="chat-image">`;
                     break;
                 case 'video':
                     messageContent = `<video src="${msgData.media_url}" class="chat-video" controls></video>`;
@@ -200,7 +208,6 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
-        // === ФІКС: "Розумна" відправка ===
         function sendMessage() {
             const text = input.value.trim();
             if (!text || !activeChatRecipientId) return;
@@ -212,7 +219,6 @@
                 'recipient_id': activeChatRecipientId
             };
 
-            // Перевіряємо, чи це не GIF з клавіатури
             if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view'))) {
                 payload.media_type = 'gif';
                 payload.media_url = text;
@@ -224,7 +230,6 @@
             socket.emit('send_message', payload);
             input.value = "";
         }
-        
         sendButton.onclick = sendMessage;
         input.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
@@ -277,8 +282,6 @@
         gifLibrary.addEventListener('click', function(e) {
             if (e.target.tagName === 'IMG') {
                 const gifUrl = e.target.src;
-                
-                // === ФІКС: Відправляємо як media_url ===
                 socket.emit('send_message', {
                     'text': null,
                     'media_url': gifUrl,
@@ -303,6 +306,7 @@
             });
         });
 
+        // === ФІКС: Оновлюємо кеш ===
         socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
@@ -310,6 +314,13 @@
             } else {
                 chatPartnerId = data.sender_id;
             }
+            
+            // Зберігаємо в кеш
+            if (!chatHistories[chatPartnerId]) {
+                chatHistories[chatPartnerId] = [];
+            }
+            chatHistories[chatPartnerId].push(data);
+            
             if (chatPartnerId == activeChatRecipientId) {
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
@@ -336,14 +347,30 @@
             }
         });
         
+        // === ФІКС: Зберігаємо в кеш ===
         socket.on('history_loaded', function(data) {
-            if (data.partner_id == activeChatRecipientId) {
+            const partnerId = data.partner_id;
+            chatHistories[partnerId] = data.history; // Зберігаємо в кеш
+            if (partnerId == activeChatRecipientId) {
                 renderChatHistory(data.history);
             }
         });
         
+        // === ФІКС: Оновлюємо і кеш, і UI ===
         socket.on('messages_were_read', function(data) {
-            if (data.reader_id == activeChatRecipientId) {
+            const partnerId = data.reader_id;
+            
+            // Оновлюємо кеш
+            if (chatHistories[partnerId]) {
+                chatHistories[partnerId].forEach(msg => {
+                    if (data.message_ids.includes(msg.id)) {
+                        msg.is_read = true;
+                    }
+                });
+            }
+            
+            // Оновлюємо UI, ТІЛЬКИ якщо цей чат активний
+            if (partnerId == activeChatRecipientId) {
                 data.message_ids.forEach(messageId => {
                     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
                     if (msgElement) {
@@ -355,8 +382,6 @@
                     }
                 });
             }
-            
-            // Ми більше не оновлюємо кеш, бо його немає
         });
         
         socket.on('user_status_change', function(data) {

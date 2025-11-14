@@ -13,6 +13,7 @@ def handle_connect():
     if current_user.is_authenticated:
         join_room(current_user.id)
         online_users.add(current_user.id)
+        
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
@@ -35,6 +36,7 @@ def handle_connect():
 def handle_disconnect():
     if current_user.is_authenticated:
         online_users.discard(current_user.id)
+        
         current_user.last_seen = datetime.now(timezone.utc)
         db.session.commit()
         
@@ -55,8 +57,8 @@ def handle_send_message(data):
     new_message = Message(
         sender_id=current_user.id,
         recipient_id=int(recipient_id),
-        text=data.get('text'), # Може бути None
-        media_url=data.get('media_url'), # Може бути None
+        text=data.get('text'),
+        media_url=data.get('media_url'),
         media_type=data.get('media_type', 'text'),
         is_read=False
     )
@@ -94,16 +96,14 @@ def handle_load_history(data):
 def handle_mark_as_read(data):
     if not current_user.is_authenticated: return
     
-    # === ФІКС ЛОГІКИ ГАЛОЧОК ===
-    # 'chat_partner_id' - це той, з ким я говорю
     chat_partner_id = data.get('chat_partner_id')
     if not chat_partner_id: return
     
     my_id = current_user.id 
     
     messages_to_update = Message.query.filter(
-        Message.sender_id == chat_partner_id, # Від нього
-        Message.recipient_id == my_id,     # До мене
+        Message.sender_id == chat_partner_id,
+        Message.recipient_id == my_id,
         Message.is_read == False
     ).all()
     
@@ -114,23 +114,28 @@ def handle_mark_as_read(data):
         
     if updated_message_ids:
         db.session.commit()
-        # Повідомляємо його (partner_id), що я (my_id) прочитав
         emit('messages_were_read', 
              {'message_ids': updated_message_ids, 'reader_id': my_id}, 
              room=int(chat_partner_id))
 
-# === НОВА ФІЧА: "Бібліотека GIF" ===
+# === ФІКС SQL-ЗАПИТУ ДЛЯ ГІФОК ===
 @socketio.on('load_my_gifs')
 def handle_load_my_gifs():
     if not current_user.is_authenticated: return
     
-    # Знаходимо 100 останніх унікальних гіфок, які Я відправляв
-    gifs = db.session.query(Message.media_url).filter(
+    # Замість DISTINCT, ми беремо всі, сортуємо, 
+    # а потім унікалізуємо в Python
+    gifs_query = db.session.query(Message.media_url, Message.timestamp).filter(
         Message.sender_id == current_user.id,
         Message.media_type == 'gif'
-    ).distinct().order_by(Message.timestamp.desc()).limit(100).all()
+    ).order_by(Message.timestamp.desc()).limit(100).all()
     
-    # all() повертає [(url1,), (url2,)]... нам треба [url1, url2]
-    gif_urls = [gif[0] for gif in gifs]
+    # Унікалізуємо, зберігаючи порядок
+    seen_urls = set()
+    gif_urls = []
+    for url, ts in gifs_query:
+        if url not in seen_urls:
+            seen_urls.add(url)
+            gif_urls.append(url)
     
     emit('my_gifs_loaded', {'gifs': gif_urls})
