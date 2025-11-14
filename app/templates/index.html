@@ -1,5 +1,3 @@
-{% endblock %}
-
 {% extends "base.html" %}
 {% block title %}Чат - Synaps{% endblock %}
 {% block content %}
@@ -24,7 +22,7 @@
     
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        // === ГЛОБАЛЬНІ ЗМІННІ (БЕЗ chatHistories) ===
+        const chatHistories = {};
         const unreadCounts = {};
         const allUsers = {}; 
         
@@ -73,6 +71,7 @@
             if (!isoString) {
                 return "був давно";
             }
+            
             const date = new Date(isoString);
             const now = new Date();
             const timeOpts = { hour: '2-digit', minute: '2-digit' };
@@ -105,7 +104,6 @@
             }
         }
 
-        // === ОНОВЛЕНА ЛОГІКА КЛІКУ (БЕЗ КЕШУ) ===
         userList.addEventListener('click', function(e) {
             requestNotificationPermission(); 
             const clickedUser = e.target.closest('.user-item');
@@ -128,14 +126,10 @@
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'sender_id': activeChatRecipientId });
 
-            // === ФІКС "ПУСТОГО ЧАТУ" (Баг 1) ===
-            // Ми більше не перевіряємо кеш.
-            // Ми ЗАВЖДИ просимо історію з сервера.
             messages.innerHTML = '<li class="status">Завантаження історії...</li>';
             socket.emit('load_history', { 'partner_id': activeChatRecipientId });
         });
         
-        // === ОНОВЛЕНА ФУНКЦІЯ (приймає історію, а не ID) ===
         function renderChatHistory(history) {
             messages.innerHTML = '';
             if (history.length === 0) {
@@ -246,7 +240,6 @@
             }
         }
 
-        // === ОНОВЛЕНИЙ ОБРОБНИК (БЕЗ КЕШУ) ===
         socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
@@ -255,8 +248,6 @@
                 chatPartnerId = data.sender_id;
             }
             
-            // Ми більше не кешуємо. 
-            // Просто рендеримо, якщо чат активний.
             if (chatPartnerId == activeChatRecipientId) {
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
@@ -277,10 +268,7 @@
             }
         });
         
-        // === ОНОВЛЕНИЙ ОБРОБНИК (БЕЗ КЕШУ) ===
         socket.on('history_loaded', function(data) {
-            // Ми не зберігаємо в кеш.
-            // Ми просто рендеримо, ЯКЩО це той чат, що ми чекаємо.
             if (data.partner_id == activeChatRecipientId) {
                 renderChatHistory(data.history);
             }
@@ -299,8 +287,6 @@
                     }
                 });
             }
-            
-            // Ми більше не оновлюємо кеш, бо його немає
         });
         
         socket.on('user_status_change', function(data) {
@@ -326,8 +312,6 @@
     </script>
     
     <style>
-                /* ... (ВСІ СТИЛІ ЗАЛИШАЮТЬСЯ БЕЗ ЗМІН) ... */
-        /* (Я залишаю їх тут, щоб файл був повний) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -424,8 +408,8 @@
             color: #777;
         }
         .read-status.read { color: #007bff; }
-        #messages li.my-message .timestamp { color: #e0e0e0; }
-        #messages li.my-message .read-status { color: #e0e0e0; }
+        #messages li.my-message .timestamp { color: #e0e0f0; }
+        #messages li.my-message .read-status { color: #e0e0f0; }
         #messages li.my-message .read-status.read { color: #fff; }
         .chat-image {
             max-width: 100%; 
