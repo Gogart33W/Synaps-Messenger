@@ -21,7 +21,7 @@
         </div>
     </div>
     
-    <div id="gif-modal" class="modal-hidden">
+    <div id="gif-modal">
         <div id="gif-modal-content">
             <h4>Мої GIF-ки</h4>
             <div id="gif-library"></div>
@@ -47,7 +47,6 @@
         const chatTitle = document.getElementById('chat-with-title');
         const fileInput = document.getElementById('file_input');
         const fileButton = document.getElementById('file_button');
-        // Нові елементи
         const gifButton = document.getElementById('gif_button');
         const gifModal = document.getElementById('gif-modal');
         const gifLibrary = document.getElementById('gif-library');
@@ -129,7 +128,7 @@
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
-            gifButton.disabled = false; // <-- Розблоковуємо GIF
+            gifButton.disabled = false;
             
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
@@ -162,7 +161,6 @@
                 item.classList.add('my-message');
             }
             
-            // === ОНОВЛЕНА ЛОГІКА: Відео + GIF ===
             let messageContent = '';
             switch(msgData.media_type) {
                 case 'image':
@@ -200,13 +198,12 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
-        // === ОНОВЛЕНО: Відправка ТЕКСТУ ===
         function sendMessage() {
             const text = input.value.trim();
             if (!text || !activeChatRecipientId) return; 
             socket.emit('send_message', {
                 'text': text,
-                'media_type': 'text', // Явно вказуємо тип
+                'media_type': 'text',
                 'recipient_id': activeChatRecipientId
             });
             input.value = "";
@@ -223,7 +220,6 @@
             formData.append('file', file);
             formData.append('recipient_id', activeChatRecipientId);
             
-            // (Заглушка "Завантаження...")
             const isImage = file.type.startsWith('image/');
             const isVideo = file.type.startsWith('video/');
             let text = "<i>Завантаження файлу...</i>";
@@ -248,32 +244,29 @@
             e.target.value = null;
         });
         
-        // === НОВА ЛОГІКА: GIF-бібліотека ===
+        // === ФІКС ЛОГІКИ МОДАЛКИ (JS) ===
         gifButton.addEventListener('click', function() {
             if (gifButton.disabled) return;
             gifLibrary.innerHTML = '<span class="status">Завантаження GIF...</span>';
-            gifModal.classList.remove('modal-hidden');
+            gifModal.classList.add('modal-visible'); // <-- Змінено
             socket.emit('load_my_gifs');
         });
-        gifCloseButton.addEventListener('click', () => gifModal.classList.add('modal-hidden'));
+        gifCloseButton.addEventListener('click', () => gifModal.classList.remove('modal-visible')); // <-- Змінено
         gifModal.addEventListener('click', (e) => {
             if (e.target === gifModal) {
-                 gifModal.classList.add('modal-hidden');
+                 gifModal.classList.remove('modal-visible'); // <-- Змінено
             }
         });
         
         gifLibrary.addEventListener('click', function(e) {
             if (e.target.tagName === 'IMG') {
                 const gifUrl = e.target.src;
-                
-                // Відправляємо гіфку як 'gif' (для бекенду) 
-                // але text (для старого `send_message`)
                 socket.emit('send_message', {
-                    'text': gifUrl, // Зберігаємо URL в 'text'
-                    'media_type': 'gif', // Вказуємо тип
+                    'text': gifUrl, 
+                    'media_type': 'gif',
                     'recipient_id': activeChatRecipientId
                 });
-                gifModal.classList.add('modal-hidden');
+                gifModal.classList.remove('modal-visible'); // <-- Змінено
             }
         });
         
@@ -291,8 +284,6 @@
             });
         });
 
-        function updateUnreadCount(userId, count) { /* ... (без змін) ... */ }
-
         socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
@@ -300,7 +291,6 @@
             } else {
                 chatPartnerId = data.sender_id;
             }
-            
             if (chatPartnerId == activeChatRecipientId) {
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
@@ -333,12 +323,7 @@
             }
         });
         
-        // === ФІКС БАГУ ГАЛОЧОК ===
         socket.on('messages_were_read', function(data) {
-            // data = { message_ids: [...], reader_id: ... }
-            
-            // Перевіряємо, чи це той чат, що відкритий у нас
-            // (reader_id - це той, хто прочитав, тобто наш chat_partner)
             if (data.reader_id == activeChatRecipientId) {
                 data.message_ids.forEach(messageId => {
                     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
@@ -351,8 +336,6 @@
                     }
                 });
             }
-            
-            // Оновлюємо кеш (ми його не видаляли)
             const partnerId = data.reader_id;
             if (chatHistories[partnerId]) {
                 chatHistories[partnerId].forEach(msg => {
@@ -385,8 +368,24 @@
     </script>
     
     <style>
-        /* ... (старі стилі .container, nav, .form-field) ... */
+        /* ... (всі старі стилі) ... */
         
+        /* === ФІКС ЛОГІКИ МОДАЛКИ (CSS) === */
+        #gif-modal {
+            display: none; /* <-- СТАЛО 'none' */
+            position: fixed;
+            z-index: 100;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.4);
+            align-items: center;
+            justify-content: center;
+        }
+        #gif-modal.modal-visible {
+            display: flex; /* <-- НОВИЙ КЛАС */
+        }
+        
+        /* ... (всі інші стилі: .user-item, .status-dot, .chat-image, @media, ... ) ... */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -510,18 +509,6 @@
             cursor: not-allowed;
         }
         
-        /* === НОВІ СТИЛІ: GIF Модалка === */
-        .modal-hidden { display: none; }
-        #gif-modal {
-            position: fixed;
-            z-index: 100;
-            left: 0; top: 0;
-            width: 100%; height: 100%;
-            background-color: rgba(0,0,0,0.4);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
         #gif-modal-content {
             background-color: #fefefe;
             padding: 20px;
@@ -551,7 +538,6 @@
             padding: 10px;
         }
 
-        /* === Мобільний Фікс === */
         @media (max-width: 768px) {
             .container { margin: 0; padding: 10px; border-radius: 0; box-shadow: none; }
             #content-wrapper { flex-direction: column; }
