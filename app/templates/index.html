@@ -125,9 +125,12 @@
                 messageContent = msgData.text || ""; 
             }
             
+            // === ФІКС "ГАЛОЧОК" (Крок 1) ===
+            // Тепер ми додаємо клас '.read'
             let readStatus = '';
             if (msgData.sender_id == currentUserId) {
-                readStatus = `<span class="read-status">${msgData.is_read ? '✓✓' : '✓'}</span>`;
+                const readClass = msgData.is_read ? 'read' : '';
+                readStatus = `<span class="read-status ${readClass}">${msgData.is_read ? '✓✓' : '✓'}</span>`;
             }
 
             item.innerHTML = `
@@ -242,32 +245,28 @@
             }
         });
         
+        // === ФІКС "ГАЛОЧОК" (Крок 2) ===
+        // Оновлюємо UI та кеш, коли сервер підтверджує прочитання
         socket.on('messages_were_read', function(data) {
-            // data = { message_ids: [...], sender_id: ... }
-            
-            // Перевіряємо, чи це той чат, що відкритий у нас
-            if (data.sender_id == activeChatRecipientId) {
-                data.message_ids.forEach(messageId => {
-                    const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-                    if (msgElement) {
-                        const statusElement = msgElement.querySelector('.read-status');
-                        if (statusElement) {
-                            statusElement.innerHTML = '✓✓'; 
-                            statusElement.classList.add('read');
-                        }
+            data.message_ids.forEach(messageId => {
+                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
+                if (msgElement) {
+                    const statusElement = msgElement.querySelector('.read-status');
+                    if (statusElement) {
+                        statusElement.innerHTML = '✓✓';
+                        statusElement.classList.add('read'); // <--- ДОДАЄМО КЛАС
                     }
-                });
-            }
-            
-            // Оновлюємо кеш
-            const partnerId = data.sender_id;
-            if (chatHistories[partnerId]) {
-                chatHistories[partnerId].forEach(msg => {
-                    if (data.message_ids.includes(msg.id)) {
+                }
+                
+                // Оновлюємо кеш
+                for (const partnerId in chatHistories) {
+                    const msg = chatHistories[partnerId].find(m => m.id == messageId);
+                    if (msg) {
                         msg.is_read = true;
+                        break;
                     }
-                });
-            }
+                }
+            });
         });
         
         socket.on('user_status_change', function(data) {
@@ -292,6 +291,24 @@
     </script>
     
     <style>
+        /* ... (всі старі стилі) ... */
+        
+        /* === ФІКС "ГАЛОЧОК" (Крок 3) === */
+        /* Ми замінили :only-child на .read для надійності */
+        .read-status {
+            display: inline-block;
+            margin-left: 5px;
+            font-weight: bold;
+            color: #777; /* ✓ (сіра) */
+        }
+        .read-status.read {
+             color: #007bff; /* ✓✓ (синя) */
+        }
+        #messages li.my-message .timestamp { color: #e0e0e0; }
+        #messages li.my-message .read-status { color: #e0e0e0; } /* ✓ (світло-сіра) */
+        #messages li.my-message .read-status.read { color: #fff; } /* ✓✓ (біла) */
+        
+        /* ... (всі інші стилі: .user-item, .status-dot, .chat-image, @media, ... ) ... */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -369,19 +386,6 @@
             font-size: 0.75em; color: #777;
             display: block; margin-top: 5px; text-align: right;
         }
-        .read-status {
-            display: inline-block;
-            margin-left: 5px;
-            font-weight: bold;
-            color: #777; /* ✓ */
-        }
-        .read-status.read {
-             color: #007bff; /* ✓✓ */
-        }
-        #messages li.my-message .timestamp { color: #e0e0e0; }
-        #messages li.my-message .read-status { color: #e0e0e0; }
-        #messages li.my-message .read-status.read { color: #fff; }
-        
         .chat-image {
             max-width: 100%; 
             border-radius: 5px;
@@ -419,7 +423,6 @@
             background-color: #f4f4f4;
             cursor: not-allowed;
         }
-        
         @media (max-width: 768px) {
             .container {
                 margin: 0;
