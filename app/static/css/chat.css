@@ -1,0 +1,353 @@
+/* Chat Layout */
+#content-wrapper { 
+    display: flex; 
+    gap: 20px; 
+}
+
+#user-list-container {
+    flex-basis: 30%; 
+    min-width: 180px;
+    border: 1px solid #ccc; 
+    border-radius: 5px;
+    background: #fff; 
+    height: fit-content; 
+    max-height: 500px;
+    display: flex; 
+    flex-direction: column;
+}
+
+#chat_window { 
+    flex-basis: 70%; 
+    display: flex; 
+    flex-direction: column;
+    transition: background 0.3s ease;
+}
+
+#user-list-container h3 {
+    margin: 0; 
+    padding: 10px 15px; 
+    background: #f7f7f7;
+    border-bottom: 1px solid #ccc;
+}
+
+/* User List */
+#user-list { 
+    list-style: none; 
+    padding: 0; 
+    margin: 0; 
+    overflow-y: auto; 
+}
+
+.user-item {
+    padding: 10px 15px; 
+    border-bottom: 1px solid #eee;
+    cursor: pointer; 
+    display: flex; 
+    align-items: center;
+    gap: 10px; 
+    position: relative; 
+}
+
+.user-item:last-child { 
+    border-bottom: none; 
+}
+
+.user-item:hover { 
+    background: #f0f0f0; 
+}
+
+.user-item.active { 
+    background: #e0eafc; 
+} 
+
+.user-info {
+    display: flex; 
+    flex-direction: column;
+    flex-grow: 1; 
+    overflow: hidden; 
+}
+
+.username { 
+    font-weight: 500; 
+    white-space: nowrap;
+    overflow: hidden; 
+    text-overflow: ellipsis;
+}
+
+.last-seen { 
+    font-size: 0.8em; 
+    color: #888; 
+}
+
+.status-dot {
+    width: 10px; 
+    height: 10px;
+    background-color: #ccc; 
+    border-radius: 50%; 
+    flex-shrink: 0; 
+}
+
+.user-item.online .status-dot { 
+    background-color: #28a745; 
+}
+
+.user-item.online .last-seen { 
+    color: #28a745; 
+    font-weight: 500; 
+}
+
+.unread-badge {
+    display: none; 
+    background-color: #007bff;
+    color: white; 
+    font-size: 0.75em; 
+    font-weight: bold;
+    padding: 2px 6px; 
+    border-radius: 10px; 
+    flex-shrink: 0;
+}
+
+/* Chat Window */
+#chat_window h3 {
+    padding: 10px 15px; 
+    margin: 0; 
+    background: #f7f7f7;
+    border: 1px solid #ccc; 
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+}
+
+#messages { 
+    list-style-type: none; 
+    margin: 0; 
+    padding: 10px; 
+    border: 1px solid #ccc; 
+    height: 300px; 
+    overflow-y: scroll; 
+    background: #fff; 
+    border-radius: 0 0 5px 5px; 
+    flex-grow: 1;
+}
+
+#messages li { 
+    padding: 8px 12px; 
+    margin-bottom: 10px; 
+    max-width: 80%; 
+    width: fit-content;
+    border-radius: 10px; 
+    position: relative; 
+    word-wrap: break-word; 
+}
+
+#messages li.my-message {
+    background-color: #007bff; 
+    color: white;
+    margin-left: auto; 
+    text-align: left; 
+}
+
+#messages li:not(.my-message) { 
+    background: #f0f0f0; 
+}
+
+#messages li strong { 
+    display: none; 
+}
+
+#messages li.status { 
+    font-style: italic; 
+    color: #888; 
+    text-align: center;
+    background: none; 
+    margin-left: auto; 
+    margin-right: auto;
+}
+
+.timestamp {
+    font-size: 0.75em; 
+    color: #777;
+    display: block; 
+    margin-top: 5px; 
+    text-align: right;
+}
+
+.read-status {
+    display: inline-block; 
+    margin-left: 5px;
+    font-weight: bold; 
+    color: #777;
+}
+
+.read-status.read { 
+    color: #007bff; 
+}
+
+#messages li.my-message .timestamp { 
+    color: #e0e0f0; 
+}
+
+#messages li.my-message .read-status { 
+    color: #e0e0f0; 
+}
+
+#messages li.my-message .read-status.read { 
+    color: #fff; 
+}
+
+/* Media */
+.chat-image, .chat-video {
+    max-width: 100%; 
+    border-radius: 5px;
+    margin-top: 5px;
+}
+
+#messages li.my-message img, 
+#messages li.my-message video { 
+    background: white; 
+} 
+
+/* Form */
+#form { 
+    display: flex; 
+    margin-top: 10px; 
+    width: 100%; 
+}
+
+#file_button, #gif_button {
+    padding: 10px 15px;
+    border: 1px solid #ccc;
+    border-right: none;
+    font-size: 1.2em;
+    cursor: not-allowed;
+    background: #f4f4f4;
+    color: #aaa;
+}
+
+#file_button { 
+    border-radius: 3px 0 0 3px; 
+}
+
+#gif_button { 
+    border-radius: 0; 
+    border-left: 1px solid #ddd; 
+}
+
+#file_button.active, 
+#gif_button:not(:disabled) {
+    cursor: pointer;
+    background: #eee;
+    color: #333;
+}
+
+#file_button.active:hover, 
+#gif_button:not(:disabled):hover { 
+    background: #ddd; 
+}
+
+#message_input { 
+    flex-grow: 1; 
+    padding: 10px; 
+    border: 1px solid #ccc; 
+    border-radius: 0; 
+    border-left: none;
+}
+
+#send_button { 
+    padding: 10px 20px; 
+    background: #007bff; 
+    color: white; 
+    border: none; 
+    border-radius: 0 3px 3px 0; 
+}
+
+#send_button:hover { 
+    background: #0056b3; 
+}
+
+#message_input:disabled, 
+#send_button:disabled {
+    background-color: #f4f4f4;
+    cursor: not-allowed;
+}
+
+/* GIF Modal */
+#gif-modal {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    left: 0; 
+    top: 0;
+    width: 100%; 
+    height: 100%;
+    background-color: rgba(0,0,0,0.4);
+    align-items: center;
+    justify-content: center;
+}
+
+#gif-modal.modal-visible {
+    display: flex;
+}
+
+#gif-modal-content {
+    background-color: #fefefe;
+    padding: 20px;
+    border-radius: 5px;
+    width: 80%;
+    max-width: 500px;
+    display: flex;
+    flex-direction: column;
+}
+
+#gif-library {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 5px;
+    height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+.gif-item {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    cursor: pointer;
+}
+
+#gif-close-button {
+    margin-top: 15px;
+    padding: 10px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .container { 
+        margin: 0; 
+        padding: 10px; 
+        border-radius: 0; 
+        box-shadow: none; 
+    }
+    
+    #content-wrapper { 
+        flex-direction: column; 
+    }
+    
+    #user-list-container { 
+        flex-basis: auto; 
+        max-height: 250px; 
+    }
+    
+    #chat_window { 
+        flex-basis: auto; 
+        height: 70vh; 
+    }
+    
+    #messages { 
+        height: 100%; 
+    }
+    
+    #gif-modal-content { 
+        width: 95%; 
+    }
+}
