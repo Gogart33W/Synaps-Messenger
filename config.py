@@ -1,13 +1,12 @@
 # config.py
 import os
-import sqlalchemy.pool # <-- НОВИЙ ІМПОРТ
+import sqlalchemy.pool
+import cloudinary # <-- НОВИЙ ІМПОРТ
 
 # Визначаємо базову директорію
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 class Config:
-    """Клас конфігурації для нашого додатка."""
-    
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'bA4vLpQ8tZ1fE2cK7jR9sW_uX3gY6mN'
     
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
@@ -15,11 +14,14 @@ class Config:
         
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # === ОСЬ НОВИЙ, ПРАВИЛЬНИЙ ФІКС ДЛЯ RENDER ===
-    # Ми кажемо SQLAlchemy НЕ використовувати пул з'єднань (pooling),
-    # а створювати і закривати з'єднання кожного разу.
-    # Це повністю вирішує конфлікт між eventlet та SQLAlchemy
-    # на Render.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "poolclass": sqlalchemy.pool.NullPool
     }
+    
+    # === НОВИЙ БЛОК: НАЛАШТУВАННЯ CLOUDINARY ===
+    # Ми читаємо ключі з середовища, які ти додав в Render
+    cloudinary.config(
+        cloud_name = os.environ.get('CLOUDINARY_CLOUD_NAME'),
+        api_key = os.environ.get('CLOUDINARY_API_KEY'),
+        api_secret = os.environ.get('CLOUDINARY_API_SECRET')
+    )

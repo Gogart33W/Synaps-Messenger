@@ -2,7 +2,7 @@
 from app import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from datetime import datetime, timezone # <-- НОВИЙ ІМПОРТ
+from datetime import datetime, timezone
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -29,24 +29,29 @@ class User(UserMixin, db.Model):
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    text = db.Column(db.String(1024))
     
-    # === ОНОВЛЕНА КОЛОНКА ЧАСУ ===
-    # Ми використовуємо "aware" datetime (той, що знає свій часовий пояс)
+    # 'text' тепер nullable=True, бо це може бути фото
+    text = db.Column(db.String(1024), nullable=True) 
+    
+    # === НОВІ КОЛОНКИ ===
+    # 'image_url' буде зберігати посилання з Cloudinary
+    image_url = db.Column(db.String(512), nullable=True)
+    # 'is_image' - прапорець, щоб JS знав, що рендерити
+    is_image = db.Column(db.Boolean, default=False)
+    
     timestamp = db.Column(db.DateTime, index=True, default=lambda: datetime.now(timezone.utc))
-    
     sender_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     recipient_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
     def __repr__(self):
-        return f'<Message {self.text[:50]}>'
+        return f'<Message {self.text[:50] if self.text else "Image"}>'
     
     def to_dict(self):
-        """Перетворює повідомлення на словник, який JS зрозуміє"""
         return {
             'id': self.id,
             'text': self.text,
-            # .isoformat() тепер коректно додасть +00:00 або Z
+            'image_url': self.image_url, # <-- Додано
+            'is_image': self.is_image,   # <-- Додано
             'timestamp': self.timestamp.isoformat(), 
             'sender_id': self.sender_id,
             'sender_username': self.sender.username,

@@ -21,10 +21,15 @@
             <h3 id="chat-with-title">Будь ласка, оберіть чат</h3>
             <ul id="messages">
                 </ul>
+            
             <div id="form">
+                <input type="file" id="file_input" accept="image/*" style="display: none;">
+                <label for="file_input" id="file_button">📎</label>
+                
                 <input id="message_input" autocomplete="off" placeholder="Оберіть чат..." disabled />
                 <button id="send_button" disabled>Відправити</button>
             </div>
+            
         </div>
 
     </div> <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -45,9 +50,11 @@
         const sendButton = document.getElementById('send_button');
         const userList = document.getElementById('user-list');
         const chatTitle = document.getElementById('chat-with-title');
+        const fileInput = document.getElementById('file_input');
+        const fileButton = document.getElementById('file_button');
 
         // ===========================================
-        // === ЛОГІКА: ОБРОБКА КЛІКІВ ТА ЗМІНИ ЧАТІВ ===
+        // === ЛОГІКА: КЛІКИ ТА ЗМІНИ ЧАТІВ ===
         // ===========================================
 
         userList.addEventListener('click', function(e) {
@@ -71,22 +78,18 @@
             input.placeholder = 'Напишіть ' + newUsername + '...';
             input.disabled = false;
             sendButton.disabled = false;
-            
-            // === НОВА ЛОГІКА ЗАВАНТАЖЕННЯ ===
-            // 1. Перевіряємо, чи є історія в кеші
+            fileButton.classList.add('active'); // Робимо "скріпку" активною
+
             if (chatHistories[activeChatRecipientId]) {
-                console.log("Рендер з кешу JS");
                 renderChatHistory(activeChatRecipientId);
             } else {
-                // 2. Якщо немає - просимо у сервера
-                console.log("Запит історії у сервера...");
                 messages.innerHTML = '<li class="status">Завантаження історії...</li>';
                 socket.emit('load_history', { 'partner_id': activeChatRecipientId });
             }
         });
         
         function renderChatHistory(chatPartnerId) {
-            messages.innerHTML = ''; // Очищуємо
+            messages.innerHTML = '';
             const history = chatHistories[chatPartnerId] || [];
             
             if (history.length === 0) {
@@ -100,11 +103,8 @@
             scrollToBottom(); 
         }
         
-        // === ОНОВЛЕНА ФУНКЦІЯ РЕНДЕРУ (з часом) ===
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
-            
-            // Форматуємо час
             const timestamp = new Date(msgData.timestamp);
             const formattedTime = timestamp.toLocaleString('uk-UA', { 
                 hour: '2-digit', minute: '2-digit', 
@@ -115,10 +115,17 @@
                 item.classList.add('my-message');
             }
             
-            // Додаємо час у HTML
+            // === Рендеримо фото або текст ===
+            let messageContent;
+            if (msgData.is_image) {
+                messageContent = `<img src="${msgData.image_url}" alt="Зображення" class="chat-image">`;
+            } else {
+                messageContent = msgData.text; // msgData.text може бути null, але JS впорається
+            }
+
             item.innerHTML = `
                 <strong>${msgData.sender_username}:</strong> 
-                ${msgData.text}
+                ${messageContent}
                 <span class="timestamp">${formattedTime}</span>
             `;
             
@@ -134,9 +141,10 @@
         }
 
         // ===========================================
-        // === ЛОГІКА: ОБРОБКА SOCKET.IO ===
+        // === ЛОГІКА: SOCKET.IO ТА ВІДПРАВКА ===
         // ===========================================
 
+        // Відправка ТЕКСТУ
         function sendMessage() {
             const text = input.value.trim();
             if (!text || !activeChatRecipientId) { 
@@ -153,11 +161,49 @@
         input.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
         });
-
-        // === ОНОВЛЕНИЙ ОБРОБНИК (зберігає в кеш) ===
-        socket.on('new_message', function(data) {
-            // data = {text, sender_id, sender_username, ...}
+        
+        // Відправка ФОТО
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file || !activeChatRecipientId) {
+                return;
+            }
             
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('recipient_id', activeChatRecipientId);
+            
+            renderMessage({
+                sender_id: currentUserId,
+                sender_username: currentUsername,
+                text: "<i>Завантаження фото...</i>",
+                is_image: false,
+                timestamp: new Date().toISOString()
+            }, true);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Upload success');
+                    // Сервер сам надішле 'new_message', 
+                    // тому "заглушка" просто заміниться
+                } else {
+                    alert('Помилка завантаження: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                alert('Критична помилка завантаження.');
+            });
+            e.target.value = null;
+        });
+
+        // === ОБРОБКА ВХІДНИХ ===
+        socket.on('new_message', function(data) {
             let chatPartnerId;
             if (data.sender_id == currentUserId) {
                 chatPartnerId = data.recipient_id;
@@ -165,15 +211,12 @@
                 chatPartnerId = data.sender_id;
             }
             
-            // 1. Зберігаємо повідомлення в кеш
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
             chatHistories[chatPartnerId].push(data);
             
-            // 2. Рендеримо
             if (chatPartnerId == activeChatRecipientId) {
-                // Якщо це перший, прибираємо "Завантаження..."
                 if (messages.querySelector('.status')) {
                     messages.innerHTML = '';
                 }
@@ -181,22 +224,12 @@
             }
         });
         
-        // === НОВИЙ ОБРОБНИК (отримує історію) ===
         socket.on('history_loaded', function(data) {
             const partnerId = data.partner_id;
-            
-            // Зберігаємо історію в наш кеш
             chatHistories[partnerId] = data.history;
-            
-            // Якщо ми ВСЕ ЩЕ у цьому чаті, малюємо
             if (partnerId == activeChatRecipientId) {
-                console.log("Історію завантажено, рендеримо...");
                 renderChatHistory(partnerId);
             }
-        });
-
-        socket.on('status', function(data) {
-            // ... (без змін)
         });
     </script>
     
@@ -234,42 +267,63 @@
             flex-grow: 1;
         }
         #messages li { 
-            padding: 8px 12px; margin-bottom: 10px; /* Збільшив відступ */
+            padding: 8px 12px; margin-bottom: 10px; 
             max-width: 80%; width: fit-content;
             border-radius: 10px;
-            position: relative; /* Для часу */
-            word-wrap: break-word; /* Перенос слів */
+            position: relative; 
+            word-wrap: break-word; 
         }
         #messages li.my-message {
-            background-color: #007bff;
-            color: white;
-            margin-left: auto; 
-            text-align: left; /* Текст зліва, але блок справа */
+            background-color: #007bff; color: white;
+            margin-left: auto; text-align: left; 
         }
-        #messages li:not(.my-message) {
-             background: #f0f0f0;
-        }
+        #messages li:not(.my-message) { background: #f0f0f0; }
         #messages li strong { margin-right: 5px; display: block; font-size: 0.9em; }
         #messages li.my-message strong { display: none; }
         #messages li.status { 
             font-style: italic; color: #888; text-align: center;
             background: none; margin-left: auto; margin-right: auto;
         }
-        /* === НОВІ СТИЛІ ДЛЯ ЧАСУ === */
         .timestamp {
-            font-size: 0.75em;
-            color: #777;
-            display: block;
+            font-size: 0.75em; color: #777;
+            display: block; margin-top: 5px; text-align: right;
+        }
+        #messages li.my-message .timestamp { color: #e0e0e0; }
+        
+        .chat-image {
+            max-width: 100%; 
+            border-radius: 5px;
             margin-top: 5px;
-            text-align: right;
         }
-        #messages li.my-message .timestamp {
-            color: #e0e0e0; /* Світліший час на синьому фоні */
-        }
+        #messages li.my-message img { background: white; } 
         
         #form { display: flex; margin-top: 10px; width: 100%; }
-        #message_input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 3px 0 0 3px;}
-        #send_button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 0 3px 3px 0; cursor: pointer;}
+        #file_button {
+            padding: 10px 15px;
+            border: 1px solid #ccc;
+            border-right: none;
+            border-radius: 3px 0 0 3px;
+            font-size: 1.2em;
+            cursor: not-allowed;
+            background: #f4f4f4;
+            color: #aaa;
+        }
+        #file_button.active {
+            cursor: pointer;
+            background: #eee;
+            color: #333;
+        }
+        #file_button.active:hover { background: #ddd; }
+        
+        #message_input { 
+            flex-grow: 1; padding: 10px; border: 1px solid #ccc; 
+            border-radius: 0;
+            border-left: none;
+        }
+        #send_button { 
+            padding: 10px 20px; background: #007bff; color: white; 
+            border: none; border-radius: 0 3px 3px 0; 
+        }
         #send_button:hover { background: #0056b3; }
         #message_input:disabled, #send_button:disabled {
             background-color: #f4f4f4;
