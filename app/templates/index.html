@@ -48,30 +48,44 @@
             return userList.querySelector(`.user-item[data-id="${userId}"]`);
         }
         
+        // === План В: Запит дозволу на сповіщення ===
+        function requestNotificationPermission() {
+            if (!("Notification" in window)) {
+                console.log("Цей браузер не підтримує сповіщення.");
+            } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then(permission => {
+                    console.log("Дозвіл на сповіщення:", permission);
+                });
+            }
+        }
+        
+        // === План В: Функція показу сповіщення ===
+        function showNotification(title, body) {
+            if (Notification.permission === "granted") {
+                new Notification(title, { body: body });
+            }
+        }
+
         userList.addEventListener('click', function(e) {
+            requestNotificationPermission(); // Запитуємо дозвіл при першому кліку
+            
             const clickedUser = e.target.closest('.user-item');
             if (!clickedUser) return;
-            
             const newRecipientId = clickedUser.dataset.id;
             const newUsername = clickedUser.dataset.username;
-
             if (newRecipientId == activeChatRecipientId) return; 
-
             if (activeUserItem) {
                 activeUserItem.classList.remove('active');
             }
-
             activeChatRecipientId = newRecipientId;
             activeUserItem = clickedUser;
             activeUserItem.classList.add('active');
-
             chatTitle.innerText = 'Чат з: ' + newUsername;
             input.placeholder = 'Напишіть ' + newUsername + '...';
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
             
-            // === План А: Скидаємо лічильник непрочитаних ===
             updateUnreadCount(newRecipientId, 0);
 
             if (chatHistories[activeChatRecipientId]) {
@@ -97,8 +111,8 @@
         
         function renderMessage(msgData, shouldScroll = true) {
             const item = document.createElement('li');
-            const timestamp = new Date(msgData.timestamp);
-            const formattedTime = timestamp.toLocaleString('uk-UA', { 
+            const timestamp = new Date(msgData.timestamp); // Це має бути UTC
+            const formattedTime = timestamp.toLocaleString('uk-UA', { // А це конвертує в +2/+3
                 hour: '2-digit', minute: '2-digit', 
                 day: '2-digit', month: 'short' 
             });
@@ -169,7 +183,6 @@
             e.target.value = null;
         });
 
-        // === План А: Функція оновлення лічильника ===
         function updateUnreadCount(userId, count) {
             unreadCounts[userId] = count;
             const userItem = findUserListItem(userId);
@@ -191,7 +204,6 @@
             } else {
                 chatPartnerId = data.sender_id;
             }
-            
             if (!chatHistories[chatPartnerId]) {
                 chatHistories[chatPartnerId] = [];
             }
@@ -203,11 +215,23 @@
                 }
                 renderMessage(data, true);
             } else {
-                // === План А: Інкремент лічильника ===
                 if(data.sender_id != currentUserId) {
                     const newCount = (unreadCounts[chatPartnerId] || 0) + 1;
                     updateUnreadCount(chatPartnerId, newCount);
                 }
+            }
+        });
+        
+        // === План А + В: Оновлено ===
+        socket.on('unread_message', function(data) {
+            // data - це повний об'єкт повідомлення
+            if (data.sender_id != activeChatRecipientId) {
+                const newCount = (unreadCounts[data.sender_id] || 0) + 1;
+                updateUnreadCount(data.sender_id, newCount);
+                
+                // План В: Показуємо сповіщення
+                const body = data.is_image ? "[Фотографія]" : data.text;
+                showNotification(data.sender_username, body);
             }
         });
         
@@ -219,7 +243,6 @@
             }
         });
         
-        // === План Б: Обробка статусів ===
         socket.on('user_status_change', function(data) {
             const userItem = findUserListItem(data.user_id);
             if (userItem) {
@@ -256,13 +279,11 @@
         }
         #user-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
         
-        /* === Оновлений .user-item (План А і Б) === */
         .user-item {
             padding: 10px 15px; border-bottom: 1px solid #eee;
             cursor: pointer; font-weight: 500;
             display: flex; align-items: center;
-            gap: 10px; /* Відступ між крапкою та іменем */
-            position: relative; /* Для лічильника */
+            gap: 10px; position: relative; 
         }
         .user-item:last-child { border-bottom: none; }
         .user-item:hover { background: #f0f0f0; }
@@ -270,20 +291,18 @@
         
         .username { flex-grow: 1; }
         
-        /* === План Б: Стилі "Онлайн" === */
         .status-dot {
             width: 10px; height: 10px;
-            background-color: #ccc; /* Сірий (офлайн) */
+            background-color: #ccc; 
             border-radius: 50%;
-            flex-shrink: 0; /* Не стискатися */
+            flex-shrink: 0; 
         }
         .user-item.online .status-dot {
-            background-color: #28a745; /* Зелений (онлайн) */
+            background-color: #28a745; 
         }
         
-        /* === План А: Стилі "Непрочитане" === */
         .unread-badge {
-            display: none; /* Ховаємо за замовчуванням */
+            display: none; 
             background-color: #007bff;
             color: white;
             font-size: 0.75em;
