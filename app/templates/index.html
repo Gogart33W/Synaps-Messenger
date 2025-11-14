@@ -12,7 +12,7 @@
             <h3 id="chat-with-title">Будь ласка, оберіть чат</h3>
             <ul id="messages"></ul>
             <div id="form">
-                <input type="file" id="file_input" accept="image/*,video/*" style="display: none;">
+                <input type="file" id="file_input" accept="image/*,video/*,image/gif" style="display: none;">
                 <label for="file_input" id="file_button">📎</label>
                 <button id="gif_button" disabled>GIF</button>
                 <input id="message_input" autocomplete="off" placeholder="Оберіть чат..." disabled />
@@ -51,7 +51,6 @@
         const gifModal = document.getElementById('gif-modal');
         const gifLibrary = document.getElementById('gif-library');
         const gifCloseButton = document.getElementById('gif-close-button');
-
 
         function renderUserList(users, onlineIds) {
             userList.innerHTML = ''; 
@@ -128,7 +127,7 @@
             input.disabled = false;
             sendButton.disabled = false;
             fileButton.classList.add('active');
-            gifButton.disabled = false;
+            gifButton.disabled = false; 
             
             updateUnreadCount(newRecipientId, 0);
             socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
@@ -164,8 +163,11 @@
             let messageContent = '';
             switch(msgData.media_type) {
                 case 'image':
+                    messageContent = `<img src="${msgData.media_url}" alt="Зображення" class="chat-image">`;
+                    break;
                 case 'gif':
-                    messageContent = `<img src="${msgData.media_url || msgData.text}" alt="Зображення" class="chat-image">`;
+                    // ФІКС: Гіфки тепер теж беруться з 'media_url'
+                    messageContent = `<img src="${msgData.media_url}" alt="GIF" class="chat-image">`;
                     break;
                 case 'video':
                     messageContent = `<video src="${msgData.media_url}" class="chat-video" controls></video>`;
@@ -198,16 +200,31 @@
             messages.scrollTop = messages.scrollHeight;
         }
 
+        // === ФІКС: "Розумна" відправка ===
         function sendMessage() {
             const text = input.value.trim();
-            if (!text || !activeChatRecipientId) return; 
-            socket.emit('send_message', {
-                'text': text,
+            if (!text || !activeChatRecipientId) return;
+            
+            let payload = {
+                'text': null,
+                'media_url': null,
                 'media_type': 'text',
                 'recipient_id': activeChatRecipientId
-            });
+            };
+
+            // Перевіряємо, чи це не GIF з клавіатури
+            if (text.startsWith('http') && (text.endsWith('.gif') || text.endsWith('.gifv') || text.includes('tenor.com/view'))) {
+                payload.media_type = 'gif';
+                payload.media_url = text;
+            } else {
+                payload.media_type = 'text';
+                payload.text = text;
+            }
+            
+            socket.emit('send_message', payload);
             input.value = "";
         }
+        
         sendButton.onclick = sendMessage;
         input.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') sendMessage();
@@ -244,29 +261,31 @@
             e.target.value = null;
         });
         
-        // === ФІКС ЛОГІКИ МОДАЛКИ (JS) ===
         gifButton.addEventListener('click', function() {
             if (gifButton.disabled) return;
             gifLibrary.innerHTML = '<span class="status">Завантаження GIF...</span>';
-            gifModal.classList.add('modal-visible'); // <-- Змінено
+            gifModal.classList.add('modal-visible');
             socket.emit('load_my_gifs');
         });
-        gifCloseButton.addEventListener('click', () => gifModal.classList.remove('modal-visible')); // <-- Змінено
+        gifCloseButton.addEventListener('click', () => gifModal.classList.remove('modal-visible'));
         gifModal.addEventListener('click', (e) => {
             if (e.target === gifModal) {
-                 gifModal.classList.remove('modal-visible'); // <-- Змінено
+                 gifModal.classList.remove('modal-visible');
             }
         });
         
         gifLibrary.addEventListener('click', function(e) {
             if (e.target.tagName === 'IMG') {
                 const gifUrl = e.target.src;
+                
+                // === ФІКС: Відправляємо як media_url ===
                 socket.emit('send_message', {
-                    'text': gifUrl, 
+                    'text': null,
+                    'media_url': gifUrl,
                     'media_type': 'gif',
                     'recipient_id': activeChatRecipientId
                 });
-                gifModal.classList.remove('modal-visible'); // <-- Змінено
+                gifModal.classList.remove('modal-visible');
             }
         });
         
@@ -336,14 +355,8 @@
                     }
                 });
             }
-            const partnerId = data.reader_id;
-            if (chatHistories[partnerId]) {
-                chatHistories[partnerId].forEach(msg => {
-                    if (data.message_ids.includes(msg.id)) {
-                        msg.is_read = true;
-                    }
-                });
-            }
+            
+            // Ми більше не оновлюємо кеш, бо його немає
         });
         
         socket.on('user_status_change', function(data) {
@@ -368,24 +381,7 @@
     </script>
     
     <style>
-        /* ... (всі старі стилі) ... */
-        
-        /* === ФІКС ЛОГІКИ МОДАЛКИ (CSS) === */
-        #gif-modal {
-            display: none; /* <-- СТАЛО 'none' */
-            position: fixed;
-            z-index: 100;
-            left: 0; top: 0;
-            width: 100%; height: 100%;
-            background-color: rgba(0,0,0,0.4);
-            align-items: center;
-            justify-content: center;
-        }
-        #gif-modal.modal-visible {
-            display: flex; /* <-- НОВИЙ КЛАС */
-        }
-        
-        /* ... (всі інші стилі: .user-item, .status-dot, .chat-image, @media, ... ) ... */
+        /* (Всі стилі залишаються без змін) */
         #content-wrapper { display: flex; gap: 20px; }
         #user-list-container {
             flex-basis: 30%; min-width: 180px;
@@ -509,6 +505,19 @@
             cursor: not-allowed;
         }
         
+        #gif-modal {
+            display: none;
+            position: fixed;
+            z-index: 100;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.4);
+            align-items: center;
+            justify-content: center;
+        }
+        #gif-modal.modal-visible {
+            display: flex;
+        }
         #gif-modal-content {
             background-color: #fefefe;
             padding: 20px;
