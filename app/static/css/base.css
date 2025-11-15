@@ -173,12 +173,14 @@ body {
     font-size: 0.875rem;
 }
 
+/* ===== ЯДЕРНИЙ ФІКС АВАТАРКИ ===== */
 .user-avatar-img {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover; /* <-- ОСЬ ЦЕЙ РЯДОК МАЄ ВСЕ ФІКСИТИ */
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 50% !important;
+    object-fit: cover !important; /* <-- Це змусить її обрізатися */
 }
+/* ================================== */
 
 .username-nav {
     font-weight: 500;
@@ -399,10 +401,12 @@ button[type="submit"]:hover,
         font-size: 0.75rem;
     }
 
+    /* ===== ЯДЕРНИЙ ФІКС (мобілка) ===== */
     .user-avatar-img {
-        width: 28px; /* <-- Зміни для мобілок */
-        height: 28px; /* <-- Зміни для мобілок */
+        width: 28px !important;
+        height: 28px !important;
     }
+    /* ================================== */
     
     .username-nav {
         display: none;
