@@ -137,3 +137,19 @@ def handle_load_my_gifs():
             gif_urls.append(url)
     
     emit('my_gifs_loaded', {'gifs': gif_urls})
+
+# ===== НОВИЙ ОБРОБНИК =====
+@socketio.on('users_list_request')
+def handle_users_list_request():
+    """
+    Клієнт (наприклад, після пошуку) просить 
+    оновити список обраних.
+    """
+    if current_user.is_authenticated:
+        favorites = current_user.get_favorites()
+        users_data = [user.to_dict() for user in favorites]
+        
+        emit('users_list', {
+            'users': users_data,
+            'online_ids': list(online_users)
+        })

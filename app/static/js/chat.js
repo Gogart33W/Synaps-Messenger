@@ -2,6 +2,7 @@
 const chatHistories = {};
 const unreadCounts = {};
 const allUsers = {};
+const online_users = new Set(); // Глобальний сет ID онлайн-юзерів
 
 // Tenor API Key (безкоштовний!)
 const TENOR_API_KEY = 'AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ'; // Публічний ключ
@@ -13,6 +14,8 @@ const currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
 let activeChatRecipientId = null;
 let activeUserItem = null;
 let currentGifTab = 'trending';
+let searchTimeout = null; // Для "debounce" пошуку
+let currentFavorites = []; // Збережемо ID обраних
 
 // ===== DOM ЕЛЕМЕНТИ =====
 const socket = io();
@@ -30,6 +33,7 @@ const gifCloseButton = document.getElementById('gif-close-button');
 const gifSearchInput = document.getElementById('gif-search-input');
 const gifSearchButton = document.getElementById('gif-search-button');
 const gifSearchContainer = document.getElementById('gif-search-container');
+const userSearchInput = document.getElementById('user-search-input'); // <-- НОВИЙ
 
 // ===== ІНІЦІАЛІЗАЦІЯ =====
 function init() {
@@ -41,7 +45,7 @@ function init() {
 
 // ===== EVENT LISTENERS =====
 function setupEventListeners() {
-    userList.addEventListener('click', handleUserClick);
+    userList.addEventListener('click', handleUserListClick); // <-- ОНОВЛЕНО
     sendButton.addEventListener('click', sendMessage);
     input.addEventListener('keypress', handleInputKeypress);
     fileInput.addEventListener('change', handleFileSelect);
@@ -53,6 +57,7 @@ function setupEventListeners() {
     gifSearchInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') searchGifs();
     });
+    userSearchInput.addEventListener('input', handleUserSearch); // <-- НОВИЙ
 }
 
 // ===== GIF TABS =====
@@ -218,29 +223,137 @@ function setupDragAndDrop() {
     });
 }
 
-// ===== USER LIST =====
-function renderUserList(users, onlineIds) {
+// ===== USER LIST & SEARCH (НОВА ВЕРСІЯ) =====
+
+// НОВА ФУНКЦІЯ: Обробник вводу в поле пошуку
+function handleUserSearch(e) {
+    const query = e.target.value.trim();
+    
+    // Скасовуємо попередній таймер
+    clearTimeout(searchTimeout);
+    
+    if (!query || query.length < 2) {
+        // Якщо поле порожнє, показуємо "Обраних"
+        socket.emit('users_list_request'); // Попросимо сервер оновити список обраних
+        return;
+    }
+    
+    // "Debounce" - чекаємо 300мс перед відправкою запиту
+    searchTimeout = setTimeout(() => {
+        searchUsers(query);
+    }, 300);
+}
+
+// НОВА ФУНКЦІЯ: відправки запиту на пошук
+async function searchUsers(query) {
+    try {
+        const response = await fetch('/search_users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        });
+        const data = await response.json();
+        
+        // Отримуємо актуальні статуси онлайн
+        const onlineIds = Array.from(online_users);
+        
+        // Малюємо результати пошуку
+        renderUserList(data.users, onlineIds, 'search');
+        
+    } catch (error) {
+        console.error('Search error:', error);
+        userList.innerHTML = '<li class="status">Помилка пошуку 😵</li>';
+    }
+}
+
+// НОВА ФУНКЦІЯ: клік на "Обране"
+async function handleFavoriteClick(e) {
+    const btn = e.target.closest('.favorite-btn');
+    if (!btn) return;
+    
+    e.stopPropagation(); // Зупиняємо клік, щоб не відкрити чат
+    
+    const userId = btn.dataset.userId;
+    const isAdding = btn.classList.contains('add');
+    const url = isAdding ? `/add_favorite/${userId}` : `/remove_favorite/${userId}`;
+    
+    try {
+        const response = await fetch(url, { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+            // Оновлюємо кнопку
+            btn.classList.toggle('add', !isAdding);
+            btn.classList.toggle('remove', isAdding);
+            btn.innerHTML = isAdding ? '★' : '☆';
+            
+            // Оновлюємо наш кеш обраних
+            if (isAdding) {
+                currentFavorites.push(parseInt(userId, 10));
+            } else {
+                currentFavorites = currentFavorites.filter(id => id !== parseInt(userId, 10));
+            }
+        } else {
+            alert('Помилка: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Favorite toggle error:', error);
+    }
+}
+
+// ПОВНІСТЮ ОНОВЛЕНА ФУНКЦІЯ: renderUserList
+function renderUserList(users, onlineIds, type = 'favorites') {
     userList.innerHTML = '';
+    
+    if (users.length === 0) {
+        let statusText = 'У вас ще немає обраних чатів. Скористайтеся пошуком.';
+        if (type === 'search') {
+            statusText = 'Нічого не знайдено 😢';
+        }
+        userList.innerHTML = `<li class="status">${statusText}</li>`;
+        return;
+    }
+    
     users.forEach(user => {
-        allUsers[user.id] = user;
+        // Оновлюємо глобальний кеш, якщо його там ще немає
+        if (!allUsers[user.id]) {
+            allUsers[user.id] = user;
+        }
+        
         const isOnline = onlineIds.includes(user.id);
+        // user.is_favorite береться з /search_users, для звичайного списку перевіряємо currentFavorites
+        const isFavorite = user.is_favorite || currentFavorites.includes(user.id);
+        
         const item = document.createElement('li');
         item.className = 'user-item';
         item.dataset.id = user.id;
-        item.dataset.username = user.username;
+        item.dataset.username = user.display_name; // Використовуємо display_name
         if (isOnline) item.classList.add('online');
+        
+        // Кнопка Додати/Видалити з обраного
+        const favoriteBtn = `
+            <button class="favorite-btn ${isFavorite ? 'remove' : 'add'}" data-user-id="${user.id}">
+                ${isFavorite ? '★' : '☆'}
+            </button>
+        `;
         
         item.innerHTML = `
             <span class="status-dot"></span>
             <div class="user-info">
-                <span class="username">${user.username}</span>
+                <span class="username">${user.display_name}</span>
                 <span class="last-seen">${isOnline ? 'Онлайн' : formatLastSeen(user.last_seen)}</span>
             </div>
-            <span class="unread-badge"></span>
+            ${type === 'search' ? favoriteBtn : '<span class="unread-badge"></span>'}
         `;
         userList.appendChild(item);
+        
+        // Оновлюємо лічильник непрочитаних, якщо це список обраних
+        if (type === 'favorites' && unreadCounts[user.id]) {
+            updateUnreadCount(user.id, unreadCounts[user.id]);
+        }
     });
 }
+
 
 function findUserListItem(userId) {
     userId = parseInt(userId, 10);
@@ -254,18 +367,28 @@ function updateUnreadCount(userId, count) {
     if (!userItem) return;
     
     const badge = userItem.querySelector('.unread-badge');
-    if (count > 0) {
+    if (badge && count > 0) {
         badge.innerText = count;
         badge.style.display = 'block';
-    } else {
+    } else if (badge) {
         badge.style.display = 'none';
     }
 }
 
-function handleUserClick(e) {
-    requestNotificationPermission();
+// ПОВНІСТЮ ОНОВЛЕНА ФУНКЦІЯ: handleUserListClick
+function handleUserListClick(e) {
+    // 1. Перевіряємо, чи не клікнули ми на кнопку "Обране"
+    const favoriteBtn = e.target.closest('.favorite-btn');
+    if (favoriteBtn) {
+        handleFavoriteClick(e); // Обробляємо клік на "Обране"
+        return; // І виходимо
+    }
+
+    // 2. Якщо ні, то це був клік на самого юзера (стара логіка)
     const clickedUser = e.target.closest('.user-item');
     if (!clickedUser) return;
+    
+    requestNotificationPermission();
     
     const newRecipientId = parseInt(clickedUser.dataset.id, 10);
     const newUsername = clickedUser.dataset.username;
@@ -293,6 +416,12 @@ function handleUserClick(e) {
         messages.innerHTML = '<li class="status">Завантаження історії...</li>';
         socket.emit('load_history', { 'partner_id': activeChatRecipientId });
     }
+    
+    // Якщо ми в режимі пошуку, повертаємося до списку обраних
+    if (userSearchInput.value.trim().length > 0) {
+        userSearchInput.value = '';
+        socket.emit('users_list_request'); // Запитуємо свіжий список обраних
+    }
 }
 
 // ===== MESSAGES =====
@@ -309,11 +438,9 @@ function renderChatHistory(history) {
 function renderMessage(msgData, shouldScroll = true) {
     const item = document.createElement('li');
     item.dataset.messageId = msgData.id;
-    const timestamp = new Date(msgData.timestamp);
-    const formattedTime = timestamp.toLocaleString('uk-UA', {
-        hour: '2-digit', minute: '2-digit',
-        day: '2-digit', month: 'short'
-    });
+
+    // ВИКОРИСТОВУЄМО НОВУ ФУНКЦІЮ ДЛЯ ЧАСУ
+    const formattedTime = formatUTCToLocal(msgData.timestamp);
 
     if (msgData.sender_id === currentUserId) {
         item.classList.add('my-message');
@@ -330,7 +457,10 @@ function renderMessage(msgData, shouldScroll = true) {
             break;
         case 'text':
         default:
-            messageContent = msgData.text || "";
+            // Проста санітизація, щоб уникнути XSS
+            const tempDiv = document.createElement('div');
+            tempDiv.innerText = msgData.text || "";
+            messageContent = tempDiv.innerHTML.replace(/\n/g, '<br>');
     }
     
     let readStatus = '';
@@ -347,6 +477,13 @@ function renderMessage(msgData, shouldScroll = true) {
         </span>
     `;
     messages.appendChild(item);
+    
+    // Додаємо обробник для картинок, щоб відкривати їх
+    const img = item.querySelector('.chat-image');
+    if (img) {
+        img.addEventListener('click', () => window.open(img.src, '_blank'));
+    }
+    
     if (shouldScroll) scrollToBottom();
 }
 
@@ -456,6 +593,28 @@ function handleGifSelect(e) {
 }
 
 // ===== UTILITIES =====
+
+// НОВА ФУНКЦІЯ для конвертації часу
+function formatUTCToLocal(utcString) {
+    if (!utcString) {
+        return '';
+    }
+    try {
+        const date = new Date(utcString);
+        // .toLocaleString() автоматично використає часовий пояс
+        // і мовні налаштування браузера користувача
+        // Додаємо опції для формату, який ти використовував раніше
+        return date.toLocaleString('uk-UA', {
+            hour: '2-digit', minute: '2-digit',
+            day: '2-digit', month: 'short'
+        });
+    } catch (e) {
+        console.error("Error formatting date:", e);
+        return utcString; // Повертаємо оригінал, якщо щось пішло не так
+    }
+}
+
+
 function formatLastSeen(isoString) {
     if (!isoString) return "був давно";
     const date = new Date(isoString);
@@ -488,7 +647,20 @@ function showNotification(title, body) {
 // ===== SOCKET.IO HANDLERS =====
 socket.on('connect', () => console.log('Socket connected'));
 socket.on('disconnect', () => console.log('Socket disconnected'));
-socket.on('users_list', data => renderUserList(data.users, data.online_ids));
+
+// ОНОВЛЕНО
+socket.on('users_list', data => {
+    currentFavorites = data.users.map(user => user.id); // Зберігаємо ID
+    
+    // Очистимо і заповнимо сет онлайн-користувачів
+    online_users.clear();
+    data.online_ids.forEach(id => online_users.add(id));
+    
+    // Рендеримо, тільки якщо юзер не шукає
+    if (userSearchInput.value.trim().length === 0) {
+        renderUserList(data.users, data.online_ids, 'favorites');
+    }
+});
 
 socket.on('new_message', function(data) {
     const senderId = parseInt(data.sender_id, 10);
@@ -554,6 +726,7 @@ socket.on('messages_were_read', function(data) {
     }
 });
 
+// ОНОВЛЕНО
 socket.on('user_status_change', function(data) {
     const userId = parseInt(data.user_id, 10);
     const userItem = findUserListItem(userId);
@@ -562,10 +735,12 @@ socket.on('user_status_change', function(data) {
     if (data.status === 'online') {
         userItem.classList.add('online');
         lastSeenEl.innerText = 'Онлайн';
+        online_users.add(userId); // Оновлюємо глобальний сет
     } else {
         userItem.classList.remove('online');
         if (allUsers[userId]) allUsers[userId].last_seen = data.last_seen;
         lastSeenEl.innerText = formatLastSeen(data.last_seen);
+        online_users.delete(userId); // Оновлюємо глобальний сет
     }
 });
 

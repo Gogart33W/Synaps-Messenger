@@ -4,8 +4,18 @@
     <div id="content-wrapper" data-current-user-id="{{ current_user.id }}">
         <div id="user-list-container">
             <h3>Користувачі Synaps</h3>
+            
+            <div id="user-search-container">
+                <input type="search" id="user-search-input" placeholder="🔍 Знайти користувачів...">
+            </div>
+            
             <ul id="user-list">
-                <li class="status">Завантаження юзерів...</li>
+                {% if not users_data %}
+                <li class="status">
+                    У вас ще немає обраних чатів. 
+                    Скористайтеся пошуком, щоб знайти друзів.
+                </li>
+                {% endif %}
             </ul>
         </div>
         <div id="chat_window">
@@ -21,7 +31,6 @@
         </div>
     </div>
     
-    <!-- GIF Modal -->
     <div id="gif-modal">
         <div id="gif-modal-content">
             <div id="gif-modal-header">
@@ -29,20 +38,17 @@
                 <button id="gif-close-button">✕</button>
             </div>
             
-            <!-- Табы -->
             <div id="gif-tabs">
                 <button class="gif-tab active" data-tab="trending">🔥 Тренди</button>
                 <button class="gif-tab" data-tab="search">🔍 Пошук</button>
                 <button class="gif-tab" data-tab="my">💾 Мої</button>
             </div>
             
-            <!-- Пошук -->
             <div id="gif-search-container" style="display: none;">
                 <input type="text" id="gif-search-input" placeholder="Шукати GIF...">
                 <button id="gif-search-button">Шукати</button>
             </div>
             
-            <!-- Бібліотека GIF -->
             <div id="gif-library">
                 <div class="gif-loading">Завантаження...</div>
             </div>
