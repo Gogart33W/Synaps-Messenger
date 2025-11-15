@@ -1,37 +1,43 @@
 {% extends "base.html" %}
-
 {% block title %}Реєстрація - Synaps{% endblock %}
-
 {% block content %}
-    <h2>Реєстрація</h2>
-    <form action="" method="post" novalidate>
-        {{ form.hidden_tag() }}
-        
-        <div class="form-field">
-            {{ form.username.label }}<br>
-            {{ form.username() }}
-            {% for error in form.username.errors %}
-            <span class="error">[{{ error }}]</span>
-            {% endfor %}
-        </div>
-        
-        <div class="form-field">
-            {{ form.password.label }}<br>
-            {{ form.password() }}
-            {% for error in form.password.errors %}
-            <span class="error">[{{ error }}]</span>
-            {% endfor %}
-        </div>
-        
-        <div class="form-field">
-            {{ form.password2.label }}<br>
-            {{ form.password2() }}
-            {% for error in form.password2.errors %}
-            <span class="error">[{{ error }}]</span>
-            {% endfor %}
-        </div>
-        
-        <br>
-        <div>{{ form.submit() }}</div>
-    </form>
+    <div class="form-container">
+        <h2>Реєстрація в Synaps</h2>
+        <form action="" method="post" novalidate>
+            {{ form.hidden_tag() }}
+            
+            <div class="form-field">
+                {{ form.username.label }}
+                {{ form.username() }}
+                {% for error in form.username.errors %}
+                <span class="error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            
+            <div class="form-field">
+                {{ form.password.label }}
+                {{ form.password() }}
+                {% for error in form.password.errors %}
+                <span class="error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            
+            <div class="form-field" style="margin-bottom: 24px;">
+                {{ form.password2.label }}
+                {{ form.password2() }}
+                {% for error in form.password2.errors %}
+                <span class="error">{{ error }}</span>
+                {% endfor %}
+            </div>
+            
+            <button type="submit" class="btn-primary">{{ form.submit.label.text }}</button>
+            
+            <p style="text-align: center; margin-top: 20px; color: var(--text-secondary); font-size: 0.9375rem;">
+                Вже є акаунт? 
+                <a href="{{ url_for('main.login') }}" style="color: var(--accent-primary); text-decoration: none; font-weight: 600;">
+                    Увійти
+                </a>
+            </p>
+        </form>
+    </div>
 {% endblock %}

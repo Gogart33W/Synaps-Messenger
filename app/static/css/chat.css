@@ -571,28 +571,60 @@
     #form {
         padding: 12px;
         gap: 6px;
+        flex-wrap: nowrap;
     }
     
     #file_button,
     #gif_button {
         width: 40px;
         height: 40px;
+        min-width: 40px;
         font-size: 1.125rem;
+        flex-shrink: 0;
     }
     
     #message_input {
         font-size: 16px; /* Prevents zoom on iOS */
+        padding: 10px 12px;
+        min-width: 0;
+        flex: 1;
     }
     
     #send_button {
         padding: 0 16px;
+        min-width: 70px;
         font-size: 0.875rem;
+        flex-shrink: 0;
     }
     
     #gif-modal-content {
         width: 95%;
         max-height: 90vh;
         border-radius: var(--radius-md);
+    }
+    
+    #gif-modal-header {
+        padding: 16px;
+    }
+    
+    #gif-modal-header h4 {
+        font-size: 1.125rem;
+    }
+    
+    #gif-close-button {
+        width: 32px;
+        height: 32px;
+        font-size: 1.25rem;
+    }
+    
+    #gif-tabs {
+        padding: 12px;
+        gap: 6px;
+    }
+    
+    #gif-search-container {
+        padding: 12px;
+        gap: 8px;
     }
     
     #gif-library {
@@ -608,6 +640,6 @@
     
     .gif-tab {
         font-size: 0.75rem;
-        padding: 8px 12px;
+        padding: 8px 10px;
     }
 }
