@@ -23,6 +23,7 @@ const input = document.getElementById('message_input');
 const sendButton = document.getElementById('send_button');
 const userList = document.getElementById('user-list');
 const chatTitle = document.getElementById('chat-with-title');
+const chatStatus = document.getElementById('chat-with-status'); // <-- НОВИЙ
 const fileInput = document.getElementById('file_input');
 const fileButton = document.getElementById('file_button');
 const gifButton = document.getElementById('gif_button');
@@ -33,7 +34,7 @@ const gifSearchInput = document.getElementById('gif-search-input');
 const gifSearchButton = document.getElementById('gif-search-button');
 const gifSearchContainer = document.getElementById('gif-search-container');
 const userSearchInput = document.getElementById('user-search-input');
-const backToChatsButton = document.getElementById('back-to-chats-btn'); // <-- НОВА КНОПКА
+const backToChatsButton = document.getElementById('back-to-chats-btn');
 
 // ===== ІНІЦІАЛІЗАЦІЯ =====
 function init() {
@@ -46,7 +47,7 @@ function init() {
 // ===== EVENT LISTENERS =====
 function setupEventListeners() {
     userList.addEventListener('click', handleUserListClick);
-    backToChatsButton.addEventListener('click', handleBackClick); // <-- НОВИЙ ОБРОБНИК
+    backToChatsButton.addEventListener('click', handleBackClick);
     sendButton.addEventListener('click', sendMessage);
     input.addEventListener('keypress', handleInputKeypress);
     fileInput.addEventListener('change', handleFileSelect);
@@ -61,12 +62,14 @@ function setupEventListeners() {
     userSearchInput.addEventListener('input', handleUserSearch);
 }
 
-// НОВА ФУНКЦІЯ: Обробник кнопки "Назад"
+// Обробник кнопки "Назад"
 function handleBackClick() {
     wrapper.classList.remove('chat-view-active');
     activeChatRecipientId = null;
     activeUserItem = null;
     chatTitle.innerText = 'Будь ласка, оберіть чат';
+    chatStatus.innerText = ''; // <-- Очищуємо статус
+    chatStatus.classList.remove('online'); // <-- Очищуємо клас
     input.placeholder = 'Оберіть чат...';
     input.disabled = true;
     sendButton.disabled = true;
@@ -80,10 +83,8 @@ function setupGifTabs() {
         tab.addEventListener('click', function() {
             tabs.forEach(t => t.classList.remove('active'));
             this.classList.add('active');
-            
             const tabType = this.dataset.tab;
             currentGifTab = tabType;
-            
             if (tabType === 'search') {
                 gifSearchContainer.style.display = 'flex';
                 gifLibrary.innerHTML = '<div class="gif-loading">Введіть запит для пошуку GIF 🔍</div>';
@@ -213,7 +214,7 @@ function setupDragAndDrop() {
     });
 }
 
-// ===== USER LIST & SEARCH (ПОВНІСТЮ ОНОВЛЕНО) =====
+// ===== USER LIST & SEARCH =====
 
 // Обробник вводу в поле пошуку
 function handleUserSearch(e) {
@@ -221,7 +222,6 @@ function handleUserSearch(e) {
     clearTimeout(searchTimeout);
     
     if (!query || query.length < 2) {
-        // Якщо поле порожнє, показуємо активні чати
         socket.emit('users_list_request'); 
         return;
     }
@@ -241,7 +241,6 @@ async function searchUsers(query) {
         });
         const data = await response.json();
         const onlineIds = Array.from(online_users);
-        // Малюємо результати пошуку
         renderUserList(data.users, onlineIds, 'search');
     } catch (error) {
         console.error('Search error:', error);
@@ -249,7 +248,7 @@ async function searchUsers(query) {
     }
 }
 
-// ПОВНІСТЮ ОНОВЛЕНА ФУНКЦІЯ: renderUserList
+// ОНОВЛЕНА ФУНКЦІЯ: renderUserList
 function renderUserList(users, onlineIds, type = 'chats') {
     userList.innerHTML = '';
     
@@ -266,6 +265,9 @@ function renderUserList(users, onlineIds, type = 'chats') {
         // Оновлюємо глобальний кеш
         if (!allUsers[user.id]) {
             allUsers[user.id] = user;
+        } else {
+            // Оновлюємо, якщо дані свіжіші
+            allUsers[user.id] = {...allUsers[user.id], ...user};
         }
         
         const isOnline = onlineIds.includes(user.id);
@@ -285,19 +287,21 @@ function renderUserList(users, onlineIds, type = 'chats') {
             avatarHtml = `<div class="user-avatar-placeholder">${letter}</div>`;
         }
         
-        // --- Логіка Останнього повідомлення / Статусу ---
+        // --- Логіка Статусу/Повідомлення ---
         let subtitleHtml = '';
-        if (type === 'chats') {
-            // Це список чатів, показуємо останнє повідомлення
+        if (isOnline) {
+            subtitleHtml = `<span class="last-seen">Онлайн</span>`;
+        } else if (type === 'chats') {
             subtitleHtml = `<span class="last-message">${user.last_message_text || '...'}</span>`;
         } else {
-            // Це пошук, показуємо "last_seen"
-            subtitleHtml = `<span class="last-seen">${isOnline ? 'Онлайн' : formatLastSeen(user.last_seen)}</span>`;
+            subtitleHtml = `<span class="last-seen">${formatLastSeen(user.last_seen)}</span>`;
         }
         
         item.innerHTML = `
-            <div class="user-avatar-container">
-                ${avatarHtml}
+            <div class="avatar-wrapper">
+                <div class="user-avatar-container">
+                    ${avatarHtml}
+                </div>
                 <span class="status-dot"></span>
             </div>
             <div class="user-info">
@@ -306,6 +310,7 @@ function renderUserList(users, onlineIds, type = 'chats') {
             </div>
             <span class="unread-badge"></span>
         `;
+
         userList.appendChild(item);
         
         if (type === 'chats' && unreadCounts[user.id]) {
@@ -335,39 +340,49 @@ function updateUnreadCount(userId, count) {
     }
 }
 
-// ПОВНІСТЮ ОНОВЛЕНА ФУНКЦІЯ: handleUserListClick
+// ОНОВЛЕНА ФУНКЦІЯ: handleUserListClick
 function handleUserListClick(e) {
-    // 1. Клік на самого юзера
     const clickedUser = e.target.closest('.user-item');
     if (!clickedUser) return;
     
-    // 2. Вмикаємо режим повноекранного чату
     wrapper.classList.add('chat-view-active');
-    
     requestNotificationPermission();
     
     const newRecipientId = parseInt(clickedUser.dataset.id, 10);
     const newUsername = clickedUser.dataset.username;
     
-    // Оновлюємо активний чат, навіть якщо той самий (для підсвітки)
     if (activeUserItem) activeUserItem.classList.remove('active');
     activeChatRecipientId = newRecipientId;
     activeUserItem = clickedUser;
     activeUserItem.classList.add('active');
     
-    // Оновлюємо заголовок і поля вводу
+    // === НОВА ЛОГІКА ОНОВЛЕННЯ ЗАГОЛОВКА ===
     chatTitle.innerText = newUsername;
+    const user = allUsers[newRecipientId];
+    if (user) {
+        const isOnline = online_users.has(user.id);
+        if (isOnline) {
+            chatStatus.innerText = 'Онлайн';
+            chatStatus.classList.add('online');
+        } else {
+            chatStatus.innerText = formatLastSeen(user.last_seen);
+            chatStatus.classList.remove('online');
+        }
+    } else {
+        chatStatus.innerText = '...'; // Поки не завантажили дані
+        chatStatus.classList.remove('online');
+    }
+    // ======================================
+    
     input.placeholder = 'Напишіть ' + newUsername + '...';
     input.disabled = false;
     sendButton.disabled = false;
     fileButton.classList.add('active');
     gifButton.disabled = false;
     
-    // Читаємо повідомлення
     updateUnreadCount(activeChatRecipientId, 0);
     socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
 
-    // Завантажуємо історію
     if (chatHistories[activeChatRecipientId]) {
         renderChatHistory(chatHistories[activeChatRecipientId]);
     } else {
@@ -375,14 +390,13 @@ function handleUserListClick(e) {
         socket.emit('load_history', { 'partner_id': activeChatRecipientId });
     }
     
-    // Якщо ми в режимі пошуку, повертаємося до списку чатів
     if (userSearchInput.value.trim().length > 0) {
         userSearchInput.value = '';
-        socket.emit('users_list_request'); // Запитуємо свіжий список чатів
+        socket.emit('users_list_request');
     }
 }
 
-// ===== MESSAGES (без змін, крім виправлення XSS) =====
+// ===== MESSAGES (без змін) =====
 function renderChatHistory(history) {
     messages.innerHTML = '';
     if (history.length === 0) {
@@ -392,17 +406,13 @@ function renderChatHistory(history) {
     history.forEach(msg => renderMessage(msg, false));
     scrollToBottom();
 }
-
 function renderMessage(msgData, shouldScroll = true) {
     const item = document.createElement('li');
     item.dataset.messageId = msgData.id;
-
     const formattedTime = formatUTCToLocal(msgData.timestamp);
-
     if (msgData.sender_id === currentUserId) {
         item.classList.add('my-message');
     }
-    
     let messageContent = '';
     switch(msgData.media_type) {
         case 'image':
@@ -414,18 +424,15 @@ function renderMessage(msgData, shouldScroll = true) {
             break;
         case 'text':
         default:
-            // Проста санітизація, щоб уникнути XSS
             const tempDiv = document.createElement('div');
             tempDiv.innerText = msgData.text || "";
             messageContent = tempDiv.innerHTML.replace(/\n/g, '<br>');
     }
-    
     let readStatus = '';
     if (msgData.sender_id === currentUserId) {
         const readClass = msgData.is_read ? 'read' : '';
         readStatus = `<span class="read-status ${readClass}">${msgData.is_read ? '✓✓' : '✓'}</span>`;
     }
-
     item.innerHTML = `
         ${messageContent}
         <span class="timestamp">
@@ -434,31 +441,24 @@ function renderMessage(msgData, shouldScroll = true) {
         </span>
     `;
     messages.appendChild(item);
-    
-    // Додаємо обробник для картинок, щоб відкривати їх
     const img = item.querySelector('.chat-image');
     if (img) {
         img.addEventListener('click', () => window.open(img.src, '_blank'));
     }
-    
     if (shouldScroll) scrollToBottom();
 }
-
 function scrollToBottom() {
     messages.scrollTop = messages.scrollHeight;
 }
-
 function sendMessage() {
     const text = input.value.trim();
     if (!text || !activeChatRecipientId) return;
-    
     let payload = {
         'text': null,
         'media_url': null,
         'media_type': 'text',
         'recipient_id': activeChatRecipientId
     };
-
     if (isGifUrl(text)) {
         payload.media_type = 'gif';
         payload.media_url = text;
@@ -466,14 +466,11 @@ function sendMessage() {
         payload.media_type = 'text';
         payload.text = text;
     }
-    
     socket.emit('send_message', payload);
     input.value = "";
 }
-
 function sendGif(gifUrl) {
     if (!activeChatRecipientId) return;
-    
     socket.emit('send_message', {
         'text': null,
         'media_url': gifUrl,
@@ -481,7 +478,6 @@ function sendGif(gifUrl) {
         'recipient_id': activeChatRecipientId
     });
 }
-
 function handleInputKeypress(e) {
     if (e.key === 'Enter') sendMessage();
 }
@@ -579,22 +575,18 @@ function showNotification(title, body) {
     }
 }
 
-// ===== SOCKET.IO HANDLERS (ОНОВЛЕНО) =====
+// ===== SOCKET.IO HANDLERS =====
 socket.on('connect', () => console.log('Socket connected'));
 socket.on('disconnect', () => console.log('Socket disconnected'));
 
 socket.on('users_list', data => {
-    // Очистимо і заповнимо сет онлайн-користувачів
     online_users.clear();
     data.online_ids.forEach(id => online_users.add(id));
-    
-    // Рендеримо, тільки якщо юзер не шукає
     if (userSearchInput.value.trim().length === 0) {
         renderUserList(data.users, data.online_ids, 'chats');
     }
 });
 
-// НОВИЙ ОБРОБНИК: сервер просить нас оновити список чатів
 socket.on('force_chat_list_update', () => {
     console.log('Force updating chat list...');
     socket.emit('users_list_request');
@@ -604,10 +596,8 @@ socket.on('new_message', function(data) {
     const senderId = parseInt(data.sender_id, 10);
     const recipientId = parseInt(data.recipient_id, 10);
     const chatPartnerId = senderId === currentUserId ? recipientId : senderId;
-    
     if (!chatHistories[chatPartnerId]) chatHistories[chatPartnerId] = [];
     chatHistories[chatPartnerId].push(data);
-    
     if (chatPartnerId === activeChatRecipientId) {
         if (messages.querySelector('.status')) messages.innerHTML = '';
         renderMessage(data, true);
@@ -622,13 +612,11 @@ socket.on('unread_message', function(data) {
     if (senderId !== activeChatRecipientId) {
         const newCount = (unreadCounts[senderId] || 0) + 1;
         updateUnreadCount(senderId, newCount);
-        
         let body = "[Нове повідомлення]";
         if(data.media_type === 'text') body = data.text;
         if(data.media_type === 'image') body = "[Фотографія]";
         if(data.media_type === 'video') body = "[Відео]";
         if(data.media_type === 'gif') body = "[GIF]";
-        
         showNotification(data.sender_username, body);
     }
 });
@@ -643,13 +631,11 @@ socket.on('history_loaded', function(data) {
 
 socket.on('messages_were_read', function(data) {
     const partnerId = parseInt(data.reader_id, 10);
-    
     if (chatHistories[partnerId]) {
         chatHistories[partnerId].forEach(msg => {
             if (data.message_ids.includes(msg.id)) msg.is_read = true;
         });
     }
-    
     if (partnerId === activeChatRecipientId) {
         data.message_ids.forEach(messageId => {
             const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
@@ -664,10 +650,12 @@ socket.on('messages_were_read', function(data) {
     }
 });
 
+// ОНОВЛЕНИЙ ОБРОБНИК: user_status_change
 socket.on('user_status_change', function(data) {
     const userId = parseInt(data.user_id, 10);
     const userItem = findUserListItem(userId);
     
+    // Оновлюємо глобальний сет
     if (data.status === 'online') {
         online_users.add(userId);
         if (userItem) userItem.classList.add('online');
@@ -676,15 +664,46 @@ socket.on('user_status_change', function(data) {
         if (userItem) userItem.classList.remove('online');
     }
     
-    // Оновлюємо текст "last_seen" тільки якщо ми в режимі пошуку
-    if (userItem && userSearchInput.value.trim().length > 0) {
-        const lastSeenEl = userItem.querySelector('.last-seen');
-        if (lastSeenEl) {
-             if (allUsers[userId]) allUsers[userId].last_seen = data.last_seen;
-             lastSeenEl.innerText = data.status === 'online' ? 'Онлайн' : formatLastSeen(data.last_seen);
+    // Оновлюємо кеш `allUsers`
+    if(allUsers[userId]) {
+        allUsers[userId].last_seen = data.last_seen;
+    }
+    
+    // Оновлюємо текст статусу В СПИСКУ ЧАТІВ
+    if (userItem) {
+        const subtitleEl = userItem.querySelector('.last-seen, .last-message');
+        if (subtitleEl) {
+            const isOnline = data.status === 'online';
+            const type = userSearchInput.value.trim().length > 0 ? 'search' : 'chats';
+            
+            if (isOnline) {
+                subtitleEl.outerHTML = `<span class="last-seen">Онлайн</span>`;
+                // Оновлюємо колір .last-seen
+                userItem.querySelector('.last-seen').style.color = 'var(--success)';
+            } else {
+                // Юзер вийшов, повертаємо логіку
+                if (type === 'chats' && allUsers[userId]) {
+                    const lastMsg = allUsers[userId].last_message_text || '...';
+                    subtitleEl.outerHTML = `<span class="last-message">${lastMsg}</span>`;
+                } else {
+                    subtitleEl.outerHTML = `<span class="last-seen">${formatLastSeen(data.last_seen)}</span>`;
+                }
+            }
+        }
+    }
+    
+    // ОНОВЛЮЄМО СТАТУС У ЗАГОЛОВКУ ЧАТУ (ЯКЩО ВІН ВІДКРИТИЙ)
+    if (userId === activeChatRecipientId) {
+        if (data.status === 'online') {
+            chatStatus.innerText = 'Онлайн';
+            chatStatus.classList.add('online');
+        } else {
+            chatStatus.innerText = formatLastSeen(data.last_seen);
+            chatStatus.classList.remove('online');
         }
     }
 });
+
 
 socket.on('my_gifs_loaded', function(data) {
     if (data.gifs.length === 0) {
