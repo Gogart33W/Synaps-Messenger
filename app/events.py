@@ -60,18 +60,22 @@ def get_and_emit_chat_list(user_id):
         for user, last_text, last_ts, media_type, sender_id, is_read in chat_partners:
             user_dict = user.to_dict()
             
-            # Форматуємо текст останнього повідомлення
+            # ===== ВИПРАВЛЕННЯ БАГУ "NoneType" =====
+            last_message_str = ""
             if media_type == 'text':
-                user_dict['last_message_text'] = last_text
+                last_message_str = last_text if last_text is not None else ""
             else:
-                user_dict['last_message_text'] = f'[{media_type.capitalize()}]'
-            
-            user_dict['last_message_ts'] = last_ts.isoformat()
+                media_type_str = media_type.capitalize() if media_type is not None else "Media"
+                last_message_str = f'[{media_type_str}]'
             
             # Додаємо префікс "Ви: " для своїх повідомлень
             if sender_id == user_id:
-                user_dict['last_message_text'] = "Ви: " + user_dict['last_message_text']
+                user_dict['last_message_text'] = "Ви: " + last_message_str
+            else:
+                user_dict['last_message_text'] = last_message_str
+            # ========================================
                 
+            user_dict['last_message_ts'] = last_ts.isoformat()
             users_data.append(user_dict)
         
         # Відправляємо список чатів тільки цьому юзеру
@@ -82,11 +86,10 @@ def get_and_emit_chat_list(user_id):
         
     except Exception as e:
         print(f"Error in get_and_emit_chat_list (user_id: {user_id}): {e}")
-        # ===== НОВИЙ КОД: ПОВІДОМЛЯЄМО КЛІЄНТА ПРО ПОМИЛКУ =====
+        # Повідомляємо клієнта про помилку
         emit('chat_list_error', {
             'error': str(e)
         }, room=user_id)
-        # ===================================================
 
 
 @socketio.on('connect')
