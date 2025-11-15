@@ -23,7 +23,7 @@ const input = document.getElementById('message_input');
 const sendButton = document.getElementById('send_button');
 const userList = document.getElementById('user-list');
 const chatTitle = document.getElementById('chat-with-title');
-const chatStatus = document.getElementById('chat-with-status'); // <-- НОВИЙ
+const chatStatus = document.getElementById('chat-with-status'); 
 const fileInput = document.getElementById('file_input');
 const fileButton = document.getElementById('file_button');
 const gifButton = document.getElementById('gif_button');
@@ -68,8 +68,8 @@ function handleBackClick() {
     activeChatRecipientId = null;
     activeUserItem = null;
     chatTitle.innerText = 'Будь ласка, оберіть чат';
-    chatStatus.innerText = ''; // <-- Очищуємо статус
-    chatStatus.classList.remove('online'); // <-- Очищуємо клас
+    chatStatus.innerText = ''; 
+    chatStatus.classList.remove('online'); 
     input.placeholder = 'Оберіть чат...';
     input.disabled = true;
     sendButton.disabled = true;
@@ -586,6 +586,13 @@ socket.on('users_list', data => {
         renderUserList(data.users, data.online_ids, 'chats');
     }
 });
+
+// ===== НОВИЙ ОБРОБНИК ПОМИЛКИ ЗАВАНТАЖЕННЯ ЧАТІВ =====
+socket.on('chat_list_error', data => {
+    console.error('Помилка завантаження чатів:', data.error);
+    userList.innerHTML = `<li class="status">Помилка завантаження чатів 😵</li>`;
+});
+// ==================================================
 
 socket.on('force_chat_list_update', () => {
     console.log('Force updating chat list...');

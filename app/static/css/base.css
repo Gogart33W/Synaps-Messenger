@@ -173,14 +173,15 @@ body {
     font-size: 0.875rem;
 }
 
-/* ===== ЯДЕРНИЙ ФІКС АВАТАРКИ ===== */
-.user-avatar-img {
-    width: 32px !important;
-    height: 32px !important;
-    border-radius: 50% !important;
-    object-fit: cover !important; /* <-- Це змусить її обрізатися */
+/* ===== ВИПРАВЛЕННЯ КОНФЛІКТУ АВАТАРОК ===== */
+/* Робимо селектор КОНКРЕТНИМ для хедера (без !important) */
+.user-info-nav .user-avatar-img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover; /* Цей стиль тепер ТІЛЬКИ для хедера */
 }
-/* ================================== */
+/* ======================================= */
 
 .username-nav {
     font-weight: 500;
@@ -401,12 +402,11 @@ button[type="submit"]:hover,
         font-size: 0.75rem;
     }
 
-    /* ===== ЯДЕРНИЙ ФІКС (мобілка) ===== */
-    .user-avatar-img {
-        width: 28px !important;
-        height: 28px !important;
+    /* Виправлення для мобілок */
+    .user-info-nav .user-avatar-img {
+        width: 28px;
+        height: 28px;
     }
-    /* ================================== */
     
     .username-nav {
         display: none;

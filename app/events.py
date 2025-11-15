@@ -10,8 +10,7 @@ online_users = set()
 
 def get_and_emit_chat_list(user_id):
     """
-    Це нова, складна функція, яка знаходить всі активні чати
-    для user_id, сортує їх за останнім повідомленням
+    Знаходить всі активні чати для user_id, сортує їх
     і відправляє список цьому юзеру.
     """
     try:
@@ -49,7 +48,8 @@ def get_and_emit_chat_list(user_id):
         ).join_from(
             final_sub, Message, final_sub.c.last_msg_id == Message.id
         ).join_from(
-            Message, User, final_sub.c.partner_id == User.id
+            # Змінено join, щоб він йшов від final_sub, а не Message
+            final_sub, User, final_sub.c.partner_id == User.id
         ).order_by(
             Message.timestamp.desc()
         )
@@ -81,7 +81,12 @@ def get_and_emit_chat_list(user_id):
         }, room=user_id)
         
     except Exception as e:
-        print(f"Error in get_and_emit_chat_list: {e}")
+        print(f"Error in get_and_emit_chat_list (user_id: {user_id}): {e}")
+        # ===== НОВИЙ КОД: ПОВІДОМЛЯЄМО КЛІЄНТА ПРО ПОМИЛКУ =====
+        emit('chat_list_error', {
+            'error': str(e)
+        }, room=user_id)
+        # ===================================================
 
 
 @socketio.on('connect')
