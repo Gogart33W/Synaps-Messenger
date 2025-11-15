@@ -23,10 +23,11 @@ def handle_connect():
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'online', 'last_seen': ts}, 
              broadcast=True)
-        emit('status', {'text': f'Ви підключені як {current_user.username}'} )
+        emit('status', {'text': f'Ви підключені як {current_user.username}'})
         
-        users_query = User.query.filter(User.id != current_user.id).all()
-        users_data = [user.to_dict() for user in users_query]
+        # Відправляємо тільки обране
+        favorites = current_user.get_favorites()
+        users_data = [user.to_dict() for user in favorites]
         emit('users_list', {
             'users': users_data,
             'online_ids': list(online_users)
@@ -54,6 +55,7 @@ def handle_send_message(data):
     recipient_id = data.get('recipient_id')
     if not recipient_id: return
     
+    # Всі можуть писати всім!
     new_message = Message(
         sender_id=current_user.id,
         recipient_id=int(recipient_id),
@@ -118,19 +120,15 @@ def handle_mark_as_read(data):
              {'message_ids': updated_message_ids, 'reader_id': my_id}, 
              room=int(chat_partner_id))
 
-# === ФІКС SQL-ЗАПИТУ ДЛЯ ГІФОК ===
 @socketio.on('load_my_gifs')
 def handle_load_my_gifs():
     if not current_user.is_authenticated: return
     
-    # Замість DISTINCT, ми беремо всі, сортуємо, 
-    # а потім унікалізуємо в Python
     gifs_query = db.session.query(Message.media_url, Message.timestamp).filter(
         Message.sender_id == current_user.id,
         Message.media_type == 'gif'
     ).order_by(Message.timestamp.desc()).limit(100).all()
     
-    # Унікалізуємо, зберігаючи порядок
     seen_urls = set()
     gif_urls = []
     for url, ts in gifs_query:

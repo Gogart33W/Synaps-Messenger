@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Профіль - {{ user.username }}{% endblock %}
+{% block content %}
+    <div class="profile-container">
+        <div class="profile-header">
+            <h2>Налаштування профілю</h2>
+        </div>
+        
+        <!-- Аватар -->
+        <div class="profile-section">
+            <div class="avatar-upload-container">
+                <div class="profile-avatar-large">
+                    {% if user.avatar_url %}
+                        <img src="{{ user.avatar_url }}" alt="Avatar" id="avatar-preview">
+                    {% else %}
+                        <div class="avatar-placeholder">{{ user.username[0].upper() }}</div>
+                    {% endif %}
+                </div>
+                <div class="avatar-upload-controls">
+                    <input type="file" id="avatar-input" accept="image/*" style="display: none;">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('avatar-input').click()">
+                        Змінити аватар
+                    </button>
+                    <p class="help-text">JPG, PNG або GIF. Макс. 5MB</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Форма профілю -->
+        <form action="{{ url_for('main.update_profile') }}" method="post" class="profile-form">
+            <div class="profile-section">
+                <h3>Основна інформація</h3>
+                
+                <div class="form-field">
+                    <label for="username">Ім'я користувача (login)</label>
+                    <input type="text" id="username" name="username" value="{{ user.username }}" required>
+                    <p class="help-text">Унікальне ім'я для входу</p>
+                </div>
+                
+                <div class="form-field">
+                    <label for="display_name">Відображуване ім'я</label>
+                    <input type="text" id="display_name" name="display_name" 
+                           value="{{ user.display_name or '' }}" 
+                           placeholder="Як вас бачитимуть інші">
+                    <p class="help-text">Можна використовувати будь-які символи</p>
+                </div>
+                
+                <div class="form-field">
+                    <label for="bio">Про себе</label>
+                    <textarea id="bio" name="bio" rows="3" 
+                              placeholder="Розкажіть трохи про себе..." 
+                              maxlength="500">{{ user.bio or '' }}</textarea>
+                    <p class="help-text">Максимум 500 символів</p>
+                </div>
+            </div>
+            
+            <div class="profile-actions">
+                <button type="submit" class="btn-primary">Зберегти зміни</button>
+                <a href="{{ url_for('main.index') }}" class="btn-secondary">Скасувати</a>
+            </div>
+        </form>
+        
+        <!-- Зміна пароля -->
+        <div class="profile-section">
+            <h3>Безпека</h3>
+            <div class="security-info">
+                <p>Останній вхід: {{ user.last_seen.strftime('%d.%m.%Y о %H:%M') if user.last_seen else 'Невідомо' }}</p>
+                <button type="button" class="btn-secondary" onclick="alert('Функція зміни пароля буде додана пізніше')">
+                    Змінити пароль
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css') }}">
+    <script src="{{ url_for('static', filename='js/profile.js') }}"></script>
+{% endblock %}

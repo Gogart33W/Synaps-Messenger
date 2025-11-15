@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
-from .models import User, Message
+from .models import User, Message, Favorite
 
 main = Blueprint('main', __name__)
 
@@ -18,9 +18,150 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    users_query = User.query.filter(User.id != current_user.id).all()
-    users_data = [user.to_dict() for user in users_query]
-    return render_template('index.html', users_data=users_data) 
+    # Показуємо обране
+    favorites = current_user.get_favorites()
+    users_data = [user.to_dict() for user in favorites]
+    
+    return render_template('index.html', users_data=users_data)
+
+@main.route('/search_users', methods=['POST'])
+@login_required
+def search_users():
+    """API для пошуку користувачів"""
+    query = request.json.get('query', '').strip()
+    
+    if not query or len(query) < 2:
+        return jsonify({'users': []})
+    
+    # Шукаємо по username або display_name
+    users = User.query.filter(
+        db.or_(
+            User.username.ilike(f'%{query}%'),
+            User.display_name.ilike(f'%{query}%')
+        ),
+        User.id != current_user.id
+    ).limit(20).all()
+    
+    results = []
+    for user in users:
+        user_dict = user.to_dict()
+        user_dict['is_favorite'] = current_user.is_favorite(user)
+        results.append(user_dict)
+    
+    return jsonify({'users': results})
+
+@main.route('/add_favorite/<int:user_id>', methods=['POST'])
+@login_required
+def add_favorite(user_id):
+    """Додати користувача в обране"""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
+    
+    if user.id == current_user.id:
+        return jsonify({'success': False, 'error': 'Не можна додати себе'}), 400
+    
+    if current_user.is_favorite(user):
+        return jsonify({'success': False, 'error': 'Вже в обраному'}), 400
+    
+    current_user.add_favorite(user)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'user': user.to_dict()})
+
+@main.route('/remove_favorite/<int:user_id>', methods=['POST'])
+@login_required
+def remove_favorite(user_id):
+    """Видалити з обраного"""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
+    
+    current_user.remove_favorite(user)
+    db.session.commit()
+    
+    return jsonify({'success': True})
+
+@main.route('/profile')
+@login_required
+def profile():
+    """Сторінка профілю"""
+    return render_template('profile.html', user=current_user)
+
+@main.route('/update_profile', methods=['POST'])
+@login_required
+def update_profile():
+    """Оновити профіль"""
+    data = request.form
+    
+    # Оновлюємо display_name
+    display_name = data.get('display_name', '').strip()
+    if display_name:
+        current_user.display_name = display_name
+    
+    # Оновлюємо bio
+    bio = data.get('bio', '').strip()
+    current_user.bio = bio if bio else None
+    
+    # Оновлюємо username (якщо змінився)
+    new_username = data.get('username', '').strip()
+    if new_username and new_username != current_user.username:
+        # Перевіряємо чи не зайнято
+        existing = User.query.filter_by(username=new_username).first()
+        if existing:
+            flash('Це ім\'я користувача вже зайняте')
+            return redirect(url_for('main.profile'))
+        current_user.username = new_username
+    
+    db.session.commit()
+    flash('Профіль оновлено!')
+    return redirect(url_for('main.profile'))
+
+@main.route('/upload_avatar', methods=['POST'])
+@login_required
+def upload_avatar():
+    """Завантажити аватар"""
+    if 'avatar' not in request.files:
+        return jsonify({'success': False, 'error': 'No file'}), 400
+    
+    file = request.files['avatar']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'}), 400
+    
+    # Перевіряємо що це картинка
+    if not file.mimetype.startswith('image/'):
+        return jsonify({'success': False, 'error': 'File must be an image'}), 400
+    
+    try:
+        # Завантажуємо на Cloudinary
+        upload_result = cloudinary.uploader.upload(
+            file,
+            folder='avatars',
+            transformation=[
+                {'width': 200, 'height': 200, 'crop': 'fill', 'gravity': 'face'},
+                {'quality': 'auto'}
+            ]
+        )
+        
+        avatar_url = upload_result.get('secure_url')
+        if not avatar_url:
+            return jsonify({'success': False, 'error': 'Upload failed'}), 500
+        
+        # Видаляємо старий аватар з Cloudinary (якщо є)
+        if current_user.avatar_url:
+            try:
+                # Витягуємо public_id зі старого URL
+                old_public_id = current_user.avatar_url.split('/')[-1].split('.')[0]
+                cloudinary.uploader.destroy(f'avatars/{old_public_id}')
+            except:
+                pass
+        
+        current_user.avatar_url = avatar_url
+        db.session.commit()
+        
+        return jsonify({'success': True, 'avatar_url': avatar_url})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main.route('/upload', methods=['POST'])
 @login_required
@@ -32,23 +173,20 @@ def upload_file():
     if file.filename == '' or not recipient_id:
         return jsonify({"error": "No selected file or recipient"}), 400
 
-    # === ОНОВЛЕНА ЛОГІКА ТИПІВ ===
-    file_type = 'image' # За замовчуванням
+    file_type = 'image'
     if file.mimetype.startswith('video/'):
         file_type = 'video'
     elif file.mimetype == 'image/gif':
         file_type = 'gif'
 
     try:
-        # Для Cloudinary, 'video' та 'image' (включно з gif) - це "image" resource_type
-        # (Якщо ми не хочемо платити за відео-транскодинг, що ми не хочемо)
         resource_type = 'image'
         if file_type == 'video':
              resource_type = 'video'
 
         upload_result = cloudinary.uploader.upload(file, resource_type=resource_type)
-        
         media_url = upload_result.get('secure_url')
+        
         if not media_url:
              return jsonify({"error": "Upload failed"}), 500
         
@@ -106,6 +244,6 @@ def register():
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
-        flash('Вітаємо, ви успішно зареєструвалися!')
+        flash('Вітаємо, ви успішно зареєструвались!')
         return redirect(url_for('main.login'))
     return render_template('register.html', form=form)

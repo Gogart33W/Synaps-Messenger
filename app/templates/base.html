@@ -28,10 +28,14 @@
                     <a href="{{ url_for('main.login') }}" class="nav-link">Увійти</a>
                     <a href="{{ url_for('main.register') }}" class="nav-link nav-link-primary">Реєстрація</a>
                 {% else %}
-                    <div class="user-info-nav">
-                        <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
-                        <span class="username-nav">{{ current_user.username }}</span>
-                    </div>
+                    <a href="{{ url_for('main.profile') }}" class="user-info-nav" style="text-decoration: none;">
+                        {% if current_user.avatar_url %}
+                            <img src="{{ current_user.avatar_url }}" alt="Avatar" class="user-avatar-img">
+                        {% else %}
+                            <div class="user-avatar">{{ current_user.username[0].upper() }}</div>
+                        {% endif %}
+                        <span class="username-nav">{{ current_user.get_display_name() }}</span>
+                    </a>
                     <a href="{{ url_for('main.logout') }}" class="nav-link">Вийти</a>
                 {% endif %}
                 

@@ -173,6 +173,13 @@ body {
     font-size: 0.875rem;
 }
 
+.user-avatar-img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
 .username-nav {
     font-weight: 500;
     color: var(--text-primary);
