@@ -113,7 +113,10 @@ def update_profile():
     
     db.session.commit()
     flash('Профіль оновлено!')
-    return redirect(url_for('main.profile'))
+    
+    # ===== ОНОВЛЕНО: Повертаємося до чатів, а не в профіль =====
+    return redirect(url_for('main.index'))
+    # ========================================================
 
 @main.route('/upload_avatar', methods=['POST'])
 @login_required

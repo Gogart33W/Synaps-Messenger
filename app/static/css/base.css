@@ -177,7 +177,7 @@ body {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    object-fit: cover;
+    object-fit: cover; /* <-- ОСЬ ЦЕЙ РЯДОК МАЄ ВСЕ ФІКСИТИ */
 }
 
 .username-nav {
@@ -397,6 +397,11 @@ button[type="submit"]:hover,
         width: 28px;
         height: 28px;
         font-size: 0.75rem;
+    }
+
+    .user-avatar-img {
+        width: 28px; /* <-- Зміни для мобілок */
+        height: 28px; /* <-- Зміни для мобілок */
     }
     
     .username-nav {
