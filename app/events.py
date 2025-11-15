@@ -3,10 +3,86 @@ from flask_socketio import emit, join_room, leave_room
 from . import socketio, db
 from flask_login import current_user
 from .models import Message, User
-from sqlalchemy import or_
+from sqlalchemy import or_, select, func, and_
 from datetime import datetime, timezone
 
 online_users = set()
+
+def get_and_emit_chat_list(user_id):
+    """
+    Це нова, складна функція, яка знаходить всі активні чати
+    для user_id, сортує їх за останнім повідомленням
+    і відправляє список цьому юзеру.
+    """
+    try:
+        # 1. Знаходимо ID останнього повідомлення в кожному чаті
+        
+        # Підзапит для повідомлень, де юзер - відправник
+        sub_sent = select(
+            Message.recipient_id.label('partner_id'), 
+            func.max(Message.id).label('max_msg_id')
+        ).where(Message.sender_id == user_id).group_by(Message.recipient_id)
+        
+        # Підзапит для повідомлень, де юзер - отримувач
+        sub_received = select(
+            Message.sender_id.label('partner_id'),
+            func.max(Message.id).label('max_msg_id')
+        ).where(Message.recipient_id == user_id).group_by(Message.sender_id)
+        
+        # 2. Об'єднуємо два підзапити
+        union_sub = sub_sent.union_all(sub_received).alias('union_sub')
+        
+        # 3. Знаходимо *фінальне* ID останнього повідомлення (на випадок дублів)
+        final_sub = select(
+            union_sub.c.partner_id,
+            func.max(union_sub.c.max_msg_id).label('last_msg_id')
+        ).group_by(union_sub.c.partner_id).alias('final_sub')
+        
+        # 4. Дістаємо юзерів та текст останнього повідомлення
+        stmt = select(
+            User, 
+            Message.text, 
+            Message.timestamp, 
+            Message.media_type, 
+            Message.sender_id,
+            Message.is_read
+        ).join_from(
+            final_sub, Message, final_sub.c.last_msg_id == Message.id
+        ).join_from(
+            Message, User, final_sub.c.partner_id == User.id
+        ).order_by(
+            Message.timestamp.desc()
+        )
+        
+        chat_partners = db.session.execute(stmt).all()
+        
+        users_data = []
+        for user, last_text, last_ts, media_type, sender_id, is_read in chat_partners:
+            user_dict = user.to_dict()
+            
+            # Форматуємо текст останнього повідомлення
+            if media_type == 'text':
+                user_dict['last_message_text'] = last_text
+            else:
+                user_dict['last_message_text'] = f'[{media_type.capitalize()}]'
+            
+            user_dict['last_message_ts'] = last_ts.isoformat()
+            
+            # Додаємо префікс "Ви: " для своїх повідомлень
+            if sender_id == user_id:
+                user_dict['last_message_text'] = "Ви: " + user_dict['last_message_text']
+                
+            users_data.append(user_dict)
+        
+        # Відправляємо список чатів тільки цьому юзеру
+        emit('users_list', {
+            'users': users_data,
+            'online_ids': list(online_users)
+        }, room=user_id)
+        
+    except Exception as e:
+        print(f"Error in get_and_emit_chat_list: {e}")
+
 
 @socketio.on('connect')
 def handle_connect():
@@ -18,20 +94,14 @@ def handle_connect():
         db.session.commit()
         
         ts = current_user.last_seen.isoformat()
-        if not ts.endswith('Z') and '+' not in ts: ts += 'Z'
         
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'online', 'last_seen': ts}, 
              broadcast=True)
         emit('status', {'text': f'Ви підключені як {current_user.username}'})
         
-        # Відправляємо тільки обране
-        favorites = current_user.get_favorites()
-        users_data = [user.to_dict() for user in favorites]
-        emit('users_list', {
-            'users': users_data,
-            'online_ids': list(online_users)
-        })
+        # Завантажуємо список активних чатів
+        get_and_emit_chat_list(current_user.id)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -42,7 +112,6 @@ def handle_disconnect():
         db.session.commit()
         
         ts = current_user.last_seen.isoformat()
-        if not ts.endswith('Z') and '+' not in ts: ts += 'Z'
         
         emit('user_status_change', 
              {'user_id': current_user.id, 'status': 'offline', 'last_seen': ts}, 
@@ -55,7 +124,6 @@ def handle_send_message(data):
     recipient_id = data.get('recipient_id')
     if not recipient_id: return
     
-    # Всі можуть писати всім!
     new_message = Message(
         sender_id=current_user.id,
         recipient_id=int(recipient_id),
@@ -73,6 +141,10 @@ def handle_send_message(data):
     
     if int(recipient_id) in online_users:
         socketio.emit('unread_message', message_data, room=int(recipient_id))
+    
+    # Оновлюємо списки чатів для обох, щоб чат піднявся вгору
+    get_and_emit_chat_list(current_user.id)
+    get_and_emit_chat_list(int(recipient_id))
 
 @socketio.on('load_history')
 def handle_load_history(data):
@@ -138,18 +210,14 @@ def handle_load_my_gifs():
     
     emit('my_gifs_loaded', {'gifs': gif_urls})
 
-# ===== НОВИЙ ОБРОБНИК =====
 @socketio.on('users_list_request')
 def handle_users_list_request():
-    """
-    Клієнт (наприклад, після пошуку) просить 
-    оновити список обраних.
-    """
+    """Клієнт просить оновити список чатів (наприклад, після пошуку)"""
     if current_user.is_authenticated:
-        favorites = current_user.get_favorites()
-        users_data = [user.to_dict() for user in favorites]
-        
-        emit('users_list', {
-            'users': users_data,
-            'online_ids': list(online_users)
-        })
+        get_and_emit_chat_list(current_user.id)
+
+@socketio.on('force_chat_list_update')
+def handle_force_chat_list_update():
+    """Використовується, коли сервер знає, що список чатів іншого юзера змінився"""
+    if current_user.is_authenticated:
+        get_and_emit_chat_list(current_user.id)

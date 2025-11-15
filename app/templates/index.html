@@ -3,23 +3,26 @@
 {% block content %}
     <div id="content-wrapper" data-current-user-id="{{ current_user.id }}">
         <div id="user-list-container">
-            <h3>Користувачі Synaps</h3>
+            <h3>Чати</h3>
             
             <div id="user-search-container">
-                <input type="search" id="user-search-input" placeholder="🔍 Знайти користувачів...">
+                <input type="search" id="user-search-input" placeholder="🔍 Пошук...">
             </div>
             
             <ul id="user-list">
-                {% if not users_data %}
-                <li class="status">
-                    У вас ще немає обраних чатів. 
-                    Скористайтеся пошуком, щоб знайти друзів.
-                </li>
-                {% endif %}
+                <li class="status">Завантаження чатів...</li>
             </ul>
         </div>
         <div id="chat_window">
-            <h3 id="chat-with-title">Будь ласка, оберіть чат</h3>
+            
+            <div id="chat-header">
+                <button id="back-to-chats-btn" title="Назад до чатів">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+                <h3 id="chat-with-title">Будь ласка, оберіть чат</h3>
+            </div>
             <ul id="messages"></ul>
             <div id="form">
                 <input type="file" id="file_input" accept="image/*,video/*,image/gif" style="display: none;">

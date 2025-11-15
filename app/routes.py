@@ -18,11 +18,9 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    # Показуємо обране
-    favorites = current_user.get_favorites()
-    users_data = [user.to_dict() for user in favorites]
-    
-    return render_template('index.html', users_data=users_data)
+    # Вся логіка завантаження чатів тепер відбувається 
+    # через Socket.IO при 'connect'
+    return render_template('index.html')
 
 @main.route('/search_users', methods=['POST'])
 @login_required
@@ -53,7 +51,7 @@ def search_users():
 @main.route('/add_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def add_favorite(user_id):
-    """Додати користувача в обране"""
+    """Додати користувача в обране (Контакти)"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -72,7 +70,7 @@ def add_favorite(user_id):
 @main.route('/remove_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def remove_favorite(user_id):
-    """Видалити з обраного"""
+    """Видалити з обраного (Контактів)"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -203,6 +201,11 @@ def upload_file():
         message_data = new_message.to_dict()
         socketio.emit('new_message', message_data, room=int(recipient_id))
         socketio.emit('new_message', message_data, room=current_user.id)
+        
+        # Оновлюємо списки чатів для обох користувачів
+        socketio.emit('force_chat_list_update', room=current_user.id)
+        socketio.emit('force_chat_list_update', room=int(recipient_id))
+        
         return jsonify({"success": True, "data": message_data}), 200
     except Exception as e:
         db.session.rollback()
