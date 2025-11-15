@@ -2,24 +2,16 @@
 import eventlet
 eventlet.monkey_patch()
 
-# Автоматична міграція при старті
-import os
-from flask import Flask
-from flask_migrate import upgrade
+# Запускаємо скрипт ініціалізації БД
+import subprocess
+import sys
 
-# Створюємо тимчасовий app для міграції
-def run_migrations():
-    try:
-        print("=== Starting database migration ===")
-        from app import create_app, db
-        app = create_app()
-        with app.app_context():
-            upgrade()
-        print("=== Migration completed successfully ===")
-    except Exception as e:
-        print(f"=== Migration error: {e} ===")
+print("🔧 Running database initialization...")
+result = subprocess.run([sys.executable, 'init_db.py'], capture_output=True, text=True)
+print(result.stdout)
+if result.stderr:
+    print(result.stderr)
 
-run_migrations()
-
+# Імпортуємо додаток
 from app import create_app, socketio
 app = create_app()
