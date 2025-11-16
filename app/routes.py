@@ -3,7 +3,7 @@ from flask import render_template, redirect, url_for, flash, Blueprint, request,
 from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader # pyright: ignore[reportMissingImports]
 from datetime import datetime, timezone
-from sqlalchemy import func # <--- ОНОВЛЕНИЙ ІМПОРТ
+from sqlalchemy import func # <--- ДОДАЙ ЦЕЙ ІМПОРТ
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -34,8 +34,6 @@ def search_users():
         db.or_(
             User.username.ilike(f'%{query}%'),
             # --- ВИПРАВЛЕНО ТУТ ---
-            # func.coalesce потрібен, щоб пошук працював
-            # навіть якщо display_name = NULL (як у нових юзерів)
             func.coalesce(User.display_name, '').ilike(f'%{query}%')
             # ---------------------
         ),
@@ -56,7 +54,6 @@ def view_user_profile(user_id):
     """Перегляд профілю іншого користувача"""
     user = User.query.get_or_404(user_id)
     
-    # Не дозволяємо дивитися свій власний профіль через цей роут
     if user.id == current_user.id:
         return redirect(url_for('main.profile'))
     
@@ -65,7 +62,6 @@ def view_user_profile(user_id):
 @main.route('/add_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def add_favorite(user_id):
-    """Додати користувача в обране"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -84,7 +80,6 @@ def add_favorite(user_id):
 @main.route('/remove_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def remove_favorite(user_id):
-    """Видалити з обраного"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -97,13 +92,11 @@ def remove_favorite(user_id):
 @main.route('/profile')
 @login_required
 def profile():
-    """Сторінка власного профілю"""
     return render_template('profile.html', user=current_user)
 
 @main.route('/update_profile', methods=['POST'])
 @login_required
 def update_profile():
-    """Оновити профіль"""
     data = request.form
     
     display_name = data.get('display_name', '').strip()
@@ -129,7 +122,6 @@ def update_profile():
 @main.route('/upload_avatar', methods=['POST'])
 @login_required
 def upload_avatar():
-    """Завантажити аватар"""
     if 'avatar' not in request.files:
         return jsonify({'success': False, 'error': 'No file'}), 400
     

@@ -568,16 +568,13 @@ socket.on('message_deleted', function(data) {
     const recipientId = data.recipient_id;
     const chatPartnerId = senderId === currentUserId ? recipientId : senderId;
     
-    // ВИПРАВЛЕНО: Оновлюємо в історії, але НЕ обнуляємо дані
     if (chatHistories[chatPartnerId]) {
         const msg = chatHistories[chatPartnerId].find(m => m.id === messageId);
         if (msg) {
             msg.is_deleted = true;
-            // НЕ обнуляємо text і media_url - вони потрібні для reply
         }
     }
     
-    // Оновлюємо на екрані
     if (chatPartnerId === activeChatRecipientId) {
         const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
         if (msgElement) {
@@ -598,11 +595,9 @@ socket.on('reaction_updated', function(data) {
     const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
     if (!msgElement) return;
     
-    // Видаляємо старі реакції
     const oldReactions = msgElement.querySelector('.message-reactions');
     if (oldReactions) oldReactions.remove();
     
-    // Додаємо нові реакції
     if (Object.keys(reactions).length > 0) {
         let reactionsHtml = '<div class="message-reactions">';
         for (const [emoji, users] of Object.entries(reactions)) {
@@ -621,7 +616,6 @@ socket.on('reaction_updated', function(data) {
         const timestamp = msgElement.querySelector('.timestamp');
         timestamp.insertAdjacentHTML('beforebegin', reactionsHtml);
         
-        // Додаємо обробники
         const reactionItems = msgElement.querySelectorAll('.reaction-item');
         reactionItems.forEach(item => {
             item.addEventListener('click', () => {
@@ -631,7 +625,6 @@ socket.on('reaction_updated', function(data) {
         });
     }
     
-    // Оновлюємо в історії
     for (const partnerId in chatHistories) {
         const msg = chatHistories[partnerId].find(m => m.id === messageId);
         if (msg) {
