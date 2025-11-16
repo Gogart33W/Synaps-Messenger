@@ -3,6 +3,7 @@ from flask import render_template, redirect, url_for, flash, Blueprint, request,
 from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader # pyright: ignore[reportMissingImports]
 from datetime import datetime, timezone
+from sqlalchemy import func # <--- ОНОВЛЕНИЙ ІМПОРТ
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -32,7 +33,11 @@ def search_users():
     users = User.query.filter(
         db.or_(
             User.username.ilike(f'%{query}%'),
-            User.display_name.ilike(f'%{query}%')
+            # --- ВИПРАВЛЕНО ТУТ ---
+            # func.coalesce потрібен, щоб пошук працював
+            # навіть якщо display_name = NULL (як у нових юзерів)
+            func.coalesce(User.display_name, '').ilike(f'%{query}%')
+            # ---------------------
         ),
         User.id != current_user.id
     ).limit(20).all()

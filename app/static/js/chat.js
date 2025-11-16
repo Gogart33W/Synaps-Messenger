@@ -472,13 +472,26 @@ function showNotification(title, body) {
 socket.on('connect', () => console.log('Socket connected'));
 socket.on('disconnect', () => console.log('Socket disconnected'));
 
+// --- ОНОВЛЕНО ТУТ ---
 socket.on('users_list', data => {
     online_users.clear();
     data.online_ids.forEach(id => online_users.add(id));
+    
+    // Перевіряємо, що ми не в режимі пошуку
     if (userSearchInput.value.trim().length === 0) {
-        renderUserList(data.users, data.online_ids, 'chats');
+        
+        // (НОВЕ) Перевіряємо, чи список чатів порожній
+        if (data.users.length === 0) {
+            userList.innerHTML = '<li class="status">У вас ще немає чатів. Знайдіть когось!</li>';
+        } else {
+            // (СТАРЕ) Якщо не порожній, рендеримо
+            // Примітка: Функція renderUserList має існувати
+            // у першій частині твого файлу, яку ти не надав
+            renderUserList(data.users, data.online_ids, 'chats');
+        }
     }
 });
+// --- КІНЕЦЬ ОНОВЛЕННЯ ---
 
 socket.on('chat_list_error', data => {
     console.error('Помилка завантаження чатів:', data.error);
