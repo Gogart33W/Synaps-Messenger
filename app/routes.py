@@ -1,7 +1,7 @@
 # app/routes.py
 from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-import cloudinary.uploader
+import cloudinary.uploader # pyright: ignore[reportMissingImports]
 from datetime import datetime, timezone
 
 from . import db, login, socketio
@@ -18,8 +18,6 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    # Вся логіка завантаження чатів тепер відбувається 
-    # через Socket.IO при 'connect'
     return render_template('index.html')
 
 @main.route('/search_users', methods=['POST'])
@@ -31,7 +29,6 @@ def search_users():
     if not query or len(query) < 2:
         return jsonify({'users': []})
     
-    # Шукаємо по username або display_name
     users = User.query.filter(
         db.or_(
             User.username.ilike(f'%{query}%'),
@@ -48,10 +45,22 @@ def search_users():
     
     return jsonify({'users': results})
 
+@main.route('/user/<int:user_id>')
+@login_required
+def view_user_profile(user_id):
+    """Перегляд профілю іншого користувача"""
+    user = User.query.get_or_404(user_id)
+    
+    # Не дозволяємо дивитися свій власний профіль через цей роут
+    if user.id == current_user.id:
+        return redirect(url_for('main.profile'))
+    
+    return render_template('user_profile.html', user=user)
+
 @main.route('/add_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def add_favorite(user_id):
-    """Додати користувача в обране (Контакти)"""
+    """Додати користувача в обране"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -70,7 +79,7 @@ def add_favorite(user_id):
 @main.route('/remove_favorite/<int:user_id>', methods=['POST'])
 @login_required
 def remove_favorite(user_id):
-    """Видалити з обраного (Контактів)"""
+    """Видалити з обраного"""
     user = User.query.get(user_id)
     if not user:
         return jsonify({'success': False, 'error': 'Користувач не знайдений'}), 404
@@ -83,7 +92,7 @@ def remove_favorite(user_id):
 @main.route('/profile')
 @login_required
 def profile():
-    """Сторінка профілю"""
+    """Сторінка власного профілю"""
     return render_template('profile.html', user=current_user)
 
 @main.route('/update_profile', methods=['POST'])
@@ -92,19 +101,15 @@ def update_profile():
     """Оновити профіль"""
     data = request.form
     
-    # Оновлюємо display_name
     display_name = data.get('display_name', '').strip()
     if display_name:
         current_user.display_name = display_name
     
-    # Оновлюємо bio
     bio = data.get('bio', '').strip()
     current_user.bio = bio if bio else None
     
-    # Оновлюємо username (якщо змінився)
     new_username = data.get('username', '').strip()
     if new_username and new_username != current_user.username:
-        # Перевіряємо чи не зайнято
         existing = User.query.filter_by(username=new_username).first()
         if existing:
             flash('Це ім\'я користувача вже зайняте')
@@ -114,9 +119,7 @@ def update_profile():
     db.session.commit()
     flash('Профіль оновлено!')
     
-    # ===== ОНОВЛЕНО: Повертаємося до чатів, а не в профіль =====
     return redirect(url_for('main.index'))
-    # ========================================================
 
 @main.route('/upload_avatar', methods=['POST'])
 @login_required
@@ -129,12 +132,10 @@ def upload_avatar():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No file selected'}), 400
     
-    # Перевіряємо що це картинка
     if not file.mimetype.startswith('image/'):
         return jsonify({'success': False, 'error': 'File must be an image'}), 400
     
     try:
-        # Завантажуємо на Cloudinary
         upload_result = cloudinary.uploader.upload(
             file,
             folder='avatars',
@@ -148,10 +149,8 @@ def upload_avatar():
         if not avatar_url:
             return jsonify({'success': False, 'error': 'Upload failed'}), 500
         
-        # Видаляємо старий аватар з Cloudinary (якщо є)
         if current_user.avatar_url:
             try:
-                # Витягуємо public_id зі старого URL
                 old_public_id = current_user.avatar_url.split('/')[-1].split('.')[0]
                 cloudinary.uploader.destroy(f'avatars/{old_public_id}')
             except:
@@ -205,7 +204,6 @@ def upload_file():
         socketio.emit('new_message', message_data, room=int(recipient_id))
         socketio.emit('new_message', message_data, room=current_user.id)
         
-        # Оновлюємо списки чатів для обох користувачів
         socketio.emit('force_chat_list_update', room=current_user.id)
         socketio.emit('force_chat_list_update', room=int(recipient_id))
         

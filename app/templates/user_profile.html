@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ user.get_display_name() }} - Synaps{% endblock %}
+{% block content %}
+    <div class="profile-container">
+        <div class="profile-header">
+            <h2>Профіль користувача</h2>
+        </div>
+        
+        <!-- Аватар і основна інформація -->
+        <div class="profile-section">
+            <div class="avatar-upload-container" style="justify-content: center; text-align: center;">
+                <div class="profile-avatar-large" style="margin: 0 auto;">
+                    {% if user.avatar_url %}
+                        <img src="{{ user.avatar_url }}" alt="Avatar">
+                    {% else %}
+                        <div class="avatar-placeholder">{{ user.username[0].upper() }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 24px;">
+                <h3 style="margin: 0 0 8px 0; font-size: 1.75rem;">{{ user.get_display_name() }}</h3>
+                <p style="color: var(--text-secondary); margin: 0 0 16px 0;">@{{ user.username }}</p>
+                
+                {% if user.bio %}
+                <p style="color: var(--text-primary); margin: 0 0 24px 0; max-width: 600px; margin-left: auto; margin-right: auto;">
+                    {{ user.bio }}
+                </p>
+                {% endif %}
+                
+                <div style="display: flex; gap: 12px; justify-content: center; align-items: center; margin-top: 16px;">
+                    <div style="color: var(--text-secondary); font-size: 0.875rem;">
+                        {% if user.id in [u.id for u in current_user.get_favorites()] %}
+                            <span style="color: var(--success); font-weight: 600;">⭐ В обраному</span>
+                        {% else %}
+                            Останній раз: {{ user.last_seen.strftime('%d.%m.%Y о %H:%M') if user.last_seen else 'Невідомо' }}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Дії -->
+        <div class="profile-actions">
+            <a href="{{ url_for('main.index') }}" class="btn-primary" style="text-decoration: none; display: inline-block; text-align: center;">
+                💬 Написати повідомлення
+            </a>
+            
+            {% if user.id in [u.id for u in current_user.get_favorites()] %}
+                <button class="btn-secondary" data-user-id="{{ user.id }}" data-action="remove">
+                    ❌ Видалити з обраного
+                </button>
+            {% else %}
+                <button class="btn-secondary" data-user-id="{{ user.id }}" data-action="add">
+                    ⭐ Додати в обране
+                </button>
+            {% endif %}
+            
+            <a href="{{ url_for('main.index') }}" class="btn-secondary" style="text-decoration: none; display: inline-block; text-align: center;">
+                ⬅️ Назад до чатів
+            </a>
+        </div>
+    </div>
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/profile.css') }}">
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var favoriteButtons = document.querySelectorAll('button[data-action]');
+        
+        favoriteButtons.forEach(function(button) {
+            button.addEventListener('click', function() {
+                var userId = this.getAttribute('data-user-id');
+                var action = this.getAttribute('data-action');
+                
+                if (action === 'add') {
+                    addFavorite(userId);
+                } else if (action === 'remove') {
+                    removeFavorite(userId);
+                }
+            });
+        });
+    });
+    
+    function addFavorite(userId) {
+        fetch('/add_favorite/' + userId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Помилка: ' + data.error);
+            }
+        })
+        .catch(function(error) {
+            console.error('Error:', error);
+            alert('Помилка додавання в обране');
+        });
+    }
+    
+    function removeFavorite(userId) {
+        fetch('/remove_favorite/' + userId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(function(response) {
+            return response.json();
+        })
+        .then(function(data) {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Помилка: ' + data.error);
+            }
+        })
+        .catch(function(error) {
+            console.error('Error:', error);
+            alert('Помилка видалення з обраного');
+        });
+    }
+    </script>
+{% endblock %}
