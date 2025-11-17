@@ -102,7 +102,7 @@ function init() {
 }
 
 // ======================================================
-// === ЛОГІКА ПОШУКУ (ЯКА БУЛА ВІДСУТНЯ)
+// === ЛОГІКА ПОШУКУ
 // ======================================================
 
 async function handleSearchInput(e) {
@@ -152,7 +152,7 @@ async function handleSearchInput(e) {
 }
 
 // ======================================================
-// === ЛОГІКА РЕНДЕРУ СПИСКУ (ЯКА БУЛА ВІДСУТНЯ)
+// === ЛОГІКА РЕНДЕРУ СПИСКУ
 // ======================================================
 
 function renderUserList(users, onlineIds, type = 'chats') {
@@ -211,7 +211,7 @@ function renderUserList(users, onlineIds, type = 'chats') {
 }
 
 // ======================================================
-// === ДОПОМІЖНІ ФУНКЦІЇ (ЯКИХ НЕ ВИСТАЧАЛО)
+// === ДОПОМІЖНІ ФУНКЦІЇ
 // ======================================================
 
 function createChatHeaderAvatar(user) {
@@ -296,11 +296,6 @@ function switchGifTab(tab) {
     if (tab === 'search' && gifSearchInput.value) searchGifs();
     if (tab === 'my') socket.emit('load_my_gifs');
 }
-
-
-// ======================================================
-// === ПОЧАТОК КОДУ, ЯКИЙ ТИ НАДАВ
-// ======================================================
 
 // HANDLE USER CLICK
 function handleUserListClick(e) {
@@ -779,7 +774,6 @@ function setupSocketHandlers() {
     socket.on('connect', () => console.log('Socket connected'));
     socket.on('disconnect', () => console.log('Socket disconnected'));
 
-    // --- ОНОВЛЕНО ТУТ ---
     socket.on('users_list', data => {
         online_users.clear();
         data.online_ids.forEach(id => online_users.add(id));
@@ -797,7 +791,6 @@ function setupSocketHandlers() {
         }
         // Якщо ми в режимі пошуку, ми не чіпаємо список
     });
-    // --- КІНЕЦЬ ОНОВЛЕННЯ ---
 
     socket.on('chat_list_error', data => {
         console.error('Помилка завантаження чатів:', data.error);
@@ -826,6 +819,11 @@ function setupSocketHandlers() {
             if (senderId !== currentUserId) {
                 socket.emit('mark_as_read', { 'chat_partner_id': senderId });
             }
+        }
+        
+        // === ВИПРАВЛЕННЯ: Якщо повідомлення від іншого користувача, оновлюємо список чатів ===
+        if (senderId !== currentUserId) {
+             socket.emit('users_list_request');
         }
     });
 
