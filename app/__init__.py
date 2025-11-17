@@ -18,9 +18,8 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # === БУЛО: async_mode='eventlet' ===
-    # === СТАЛО: async_mode='gevent'  ===
-    socketio.init_app(app, async_mode='gevent') 
+    # === ПОВЕРНУЛИ eventlet ===
+    socketio.init_app(app, async_mode='eventlet')
     
     db.init_app(app)
     login.init_app(app)
@@ -32,5 +31,5 @@ def create_app(config_class=Config):
     from . import models 
     from . import events 
     
-    print("Додаток 'Synaps' успішно створено (gevent mode).")
+    print("Додаток 'Synaps' успішно створено (eventlet mode).")
     return app
