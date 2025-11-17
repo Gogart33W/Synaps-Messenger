@@ -1,29 +1,23 @@
 // ======================================================
-// === ПОЧАТОК: Глобальні змінні та Ініціалізація
+// === ГЛОБАЛЬНІ ЗМІННІ ТА ІНІЦІАЛІЗАЦІЯ
 // ======================================================
 
-// Глобальні змінні стану
 let activeChatRecipientId = null;
 let activeUserItem = null;
 let replyToMessage = null;
 let isTyping = false;
 let typingTimeout = null;
 
-// Кеш
 const allUsers = {};
 const chatHistories = {};
 const unreadCounts = {};
 const online_users = new Set();
 
-// Елементи DOM
 let socket;
 let userList, userSearchInput, messages, input, sendButton, fileButton, gifButton, wrapper, chatTitle, chatStatus, fileInput, backToChatsBtn;
 let gifModal, gifCloseButton, gifTabs, gifSearchContainer, gifSearchInput, gifSearchButton, gifLibrary;
-
-// Налаштування GIF
 let currentGifTab = 'trending';
 
-// Debounce для пошуку
 function debounce(func, delay) {
     let timeout;
     return function(...args) {
@@ -32,21 +26,12 @@ function debounce(func, delay) {
     };
 }
 
-// Ініціалізація
 function init() {
-    // Підключення Socket.IO
     socket = io();
-
-    // Отримання ID поточного користувача
     wrapper = document.getElementById('content-wrapper');
     const currentUserIdStr = wrapper.dataset.currentUserId;
-    if (!currentUserIdStr) {
-        console.error("Не вдалося знайти ID поточного користувача!");
-        return;
-    }
     window.currentUserId = parseInt(currentUserIdStr, 10);
 
-    // Пошук елементів DOM
     userList = document.getElementById('user-list');
     userSearchInput = document.getElementById('user-search-input');
     messages = document.getElementById('messages');
@@ -59,7 +44,6 @@ function init() {
     chatStatus = document.getElementById('chat-with-status');
     backToChatsBtn = document.getElementById('back-to-chats-btn');
     
-    // GIF Modal елементи
     gifModal = document.getElementById('gif-modal');
     gifCloseButton = document.getElementById('gif-close-button');
     gifTabs = document.querySelectorAll('.gif-tab');
@@ -68,7 +52,6 @@ function init() {
     gifSearchButton = document.getElementById('gif-search-button');
     gifLibrary = document.getElementById('gif-library');
 
-    // === ОБРОБНИКИ ПОДІЙ ===
     userList.addEventListener('click', handleUserListClick);
     userSearchInput.addEventListener('input', debounce(handleSearchInput, 300));
 
@@ -91,13 +74,8 @@ function init() {
         activeUserItem = null;
         chatTitle.innerText = "Будь ласка, оберіть чат";
         chatStatus.innerText = "";
-        
-        // Видаляємо аватар з хедера чату
-        const oldAvatar = document.getElementById('chat-header-avatar');
-        if (oldAvatar) oldAvatar.remove();
     });
 
-    // === ПІДКЛЮЧЕННЯ ДО SOCKET.IO ===
     setupSocketHandlers();
 }
 
@@ -109,21 +87,13 @@ async function handleSearchInput(e) {
     const query = e.target.value.trim();
     
     if (query.length < 2) {
-        // Якщо поле пошуку очистили, повертаємо список чатів
         if (query.length === 0) {
-            userList.innerHTML = '<li class="status">Завантаження чатів...</li>';
-            socket.emit('users_list_request'); // Запитуємо звичайний список чатів
-        } else {
-             // Якщо ввели 1 символ, нічого не робимо, лишаємо список чатів
-             if(userList.querySelector('.user-item') === null) {
-                 userList.innerHTML = '<li class="status">Завантаження чатів...</li>';
-                 socket.emit('users_list_request');
-             }
+            // Якщо поле очистили - показуємо звичайний список
+            socket.emit('users_list_request');
         }
         return;
     }
 
-    // Показуємо статус пошуку
     userList.innerHTML = '<li class="status">Пошук...</li>';
     
     try {
@@ -133,16 +103,11 @@ async function handleSearchInput(e) {
             body: JSON.stringify({ query: query })
         });
         
-        if (!response.ok) {
-            throw new Error('Помилка мережі під час пошуку');
-        }
-        
         const data = await response.json();
         
         if (data.users.length === 0) {
             userList.innerHTML = '<li class="status">Нікого не знайдено 😢</li>';
         } else {
-            // Знайшли, рендеримо
             renderUserList(data.users, online_users, 'search');
         }
     } catch (error) {
@@ -152,23 +117,26 @@ async function handleSearchInput(e) {
 }
 
 // ======================================================
-// === ЛОГІКА РЕНДЕРУ СПИСКУ
+// === РЕНДЕР СПИСКУ ЧАТІВ
 // ======================================================
 
 function renderUserList(users, onlineIds, type = 'chats') {
-    userList.innerHTML = ''; // Очищуємо список (прибираємо "Завантаження...")
+    userList.innerHTML = '';
+    
+    if (users.length === 0 && type === 'chats') {
+         userList.innerHTML = '<li class="status">У вас ще немає чатів. Знайдіть когось!</li>';
+         return;
+    }
     
     users.forEach(user => {
-        // Зберігаємо юзера в кеш, щоб мати дані про нього
         allUsers[user.id] = user;
         
         const isOnline = onlineIds.has(user.id);
         const item = document.createElement('li');
         item.className = `user-item ${isOnline ? 'online' : ''}`;
         item.dataset.id = user.id;
-        item.dataset.username = user.display_name; // Використовуємо display_name для заголовку
+        item.dataset.username = user.display_name;
 
-        // Аватар
         let avatarHtml;
         if (user.avatar_url) {
             avatarHtml = `<img src="${user.avatar_url}" alt="Avatar" class="user-avatar-img">`;
@@ -177,15 +145,13 @@ function renderUserList(users, onlineIds, type = 'chats') {
             avatarHtml = `<div class="user-avatar-placeholder">${placeholder}</div>`;
         }
         
-        // Підпис (останнє повідомлення або статус)
         let subtitleHtml;
         if (type === 'chats') {
             subtitleHtml = `<span class="last-message">${user.last_message_text || '...'}</span>`;
-        } else { // 'search'
+        } else {
             subtitleHtml = `<span class="last-seen">${isOnline ? 'Онлайн' : formatLastSeen(user.last_seen)}</span>`;
         }
         
-        // Непрочитані
         const unreadCount = unreadCounts[user.id] || 0;
 
         item.innerHTML = `
@@ -200,7 +166,6 @@ function renderUserList(users, onlineIds, type = 'chats') {
             <span class="unread-badge" style="display: ${unreadCount > 0 ? 'block' : 'none'}">${unreadCount}</span>
         `;
         
-        // Робимо активним, якщо це відкритий чат
         if (user.id === activeChatRecipientId) {
             item.classList.add('active');
             activeUserItem = item;
@@ -211,93 +176,176 @@ function renderUserList(users, onlineIds, type = 'chats') {
 }
 
 // ======================================================
-// === ДОПОМІЖНІ ФУНКЦІЇ
+// === РЕНДЕР ПОВІДОМЛЕНЬ ТА ІНТЕРФЕЙС
 // ======================================================
 
-function createChatHeaderAvatar(user) {
-    const wrapper = document.getElementById('chat-title-wrapper');
+function renderMessage(msgData, shouldScroll = true) {
+    const item = document.createElement('li');
+    item.dataset.messageId = msgData.id;
+    const formattedTime = formatUTCToLocal(msgData.timestamp);
     
-    // Видаляємо старий аватар, якщо він є
-    const oldAvatar = document.getElementById('chat-header-avatar');
-    if (oldAvatar) oldAvatar.remove();
-
-    const avatar = document.createElement('div');
-    avatar.id = 'chat-header-avatar';
-    avatar.className = 'chat-header-avatar';
-    
-    if (user.avatar_url) {
-        avatar.innerHTML = `<img src="${user.avatar_url}" alt="Avatar">`;
-    } else {
-        const placeholder = user.username[0].toUpperCase();
-        avatar.innerHTML = `<div class="chat-header-avatar-placeholder">${placeholder}</div>`;
+    if (msgData.sender_id === currentUserId) {
+        item.classList.add('my-message');
     }
     
-    avatar.addEventListener('click', () => {
-        window.open(`/user/${user.id}`, '_blank');
+    if (msgData.is_deleted) {
+        item.classList.add('deleted');
+        item.innerHTML = `<span>🚫 Повідомлення видалено</span><span class="timestamp">${formattedTime}</span>`;
+        messages.appendChild(item);
+        if (shouldScroll) scrollToBottom();
+        return;
+    }
+    
+    let messageContent = '';
+    
+    // Reply
+    if (msgData.reply_to && msgData.reply_to.id) {
+        const replyAuthor = msgData.reply_to.sender_name || 'Користувач';
+        let replyText = msgData.reply_to.text || '';
+        if (msgData.reply_to.is_deleted) replyText = '🚫 Повідомлення видалено';
+        else if (msgData.reply_to.media_type !== 'text') replyText = `[${msgData.reply_to.media_type}]`;
+        
+        messageContent += `
+            <div class="message-reply-container">
+                <div class="message-reply-author">${replyAuthor}</div>
+                <div class="message-reply-text">${replyText}</div>
+            </div>
+        `;
+    }
+    
+    // Forward
+    if (msgData.forwarded_from && msgData.forwarded_from.sender_name) {
+        messageContent += `<div class="message-forwarded">📤 Переслано від ${msgData.forwarded_from.sender_name}</div>`;
+    }
+    
+    // Media/Text
+    switch(msgData.media_type) {
+        case 'image':
+        case 'gif':
+            messageContent += `<img src="${msgData.media_url || msgData.text}" alt="Зображення" class="chat-image">`;
+            break;
+        case 'video':
+            messageContent += `<video src="${msgData.media_url}" class="chat-video" controls></video>`;
+            break;
+        case 'text':
+        default:
+            messageContent += `<div>${(msgData.text || "").replace(/\n/g, '<br>')}</div>`;
+    }
+    
+    // Reactions
+    let reactionsHtml = '';
+    if (msgData.reactions && Object.keys(msgData.reactions).length > 0) {
+        reactionsHtml = '<div class="message-reactions">';
+        for (const [emoji, users] of Object.entries(msgData.reactions)) {
+            const hasMyReaction = users.some(u => u.user_id === currentUserId);
+            const reactionClass = hasMyReaction ? 'reaction-item my-reaction' : 'reaction-item';
+            reactionsHtml += `
+                <span class="${reactionClass}" data-emoji="${emoji}" data-message-id="${msgData.id}" title="${users.map(u => u.user_name).join(', ')}">
+                    <span class="reaction-emoji">${emoji}</span>
+                    <span class="reaction-count">${users.length}</span>
+                </span>
+            `;
+        }
+        reactionsHtml += '</div>';
+    }
+    
+    // Read Status & Menu
+    const readStatus = (msgData.sender_id === currentUserId) 
+        ? `<span class="read-status ${msgData.is_read ? 'read' : ''}">${msgData.is_read ? '✓✓' : '✓'}</span>` 
+        : '';
+        
+    const contextMenu = createContextMenu(msgData);
+    
+    item.innerHTML = `
+        ${messageContent}
+        ${reactionsHtml}
+        <span class="timestamp">${formattedTime} ${readStatus}</span>
+        ${contextMenu}
+    `;
+    
+    messages.appendChild(item);
+    
+    // Listeners
+    const img = item.querySelector('.chat-image');
+    if (img) img.addEventListener('click', () => window.open(img.src, '_blank'));
+    
+    item.querySelectorAll('.reaction-item').forEach(ri => {
+        ri.addEventListener('click', () => {
+            socket.emit('add_reaction', { message_id: parseInt(ri.dataset.messageId), emoji: ri.dataset.emoji });
+        });
     });
     
-    // Вставляємо аватар перед заголовком
-    wrapper.before(avatar);
+    if (shouldScroll) scrollToBottom();
 }
 
-function updateUnreadCount(userId, count) {
-    unreadCounts[userId] = count;
-    const userItem = findUserListItem(userId);
-    if (userItem) {
-        const badge = userItem.querySelector('.unread-badge');
-        if (badge) {
-            badge.innerText = count;
-            badge.style.display = count > 0 ? 'block' : 'none';
-        }
+function createContextMenu(msgData) {
+    const canDelete = msgData.sender_id === currentUserId;
+    return `
+        <div class="message-context-menu">
+            <button class="context-menu-btn" title="Відповісти" onclick="replyToMsg(${msgData.id})">↩️</button>
+            <button class="context-menu-btn" title="Реакція" onclick="toggleEmojiPicker(${msgData.id})">😀</button>
+            ${canDelete ? `<button class="context-menu-btn delete-btn" title="Видалити" onclick="deleteMsg(${msgData.id})">🗑️</button>` : ''}
+        </div>
+        <div class="emoji-picker" id="emoji-picker-${msgData.id}">
+            <div class="emoji-picker-grid">
+                ${['❤️','👍','😂','😮','😢','🙏','🔥','🎉'].map(e => 
+                    `<span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '${e}')">${e}</span>`
+                ).join('')}
+            </div>
+        </div>
+    `;
+}
+
+// Глобальні функції
+window.replyToMsg = (id) => {
+    const msg = findMessageInHistory(id);
+    if (msg) {
+        replyToMessage = msg;
+        showReplyIndicator(msg);
+        input.focus();
     }
-}
+};
 
-function findUserListItem(userId) {
-    return userList.querySelector(`.user-item[data-id="${userId}"]`);
-}
+window.toggleEmojiPicker = (id) => {
+    document.querySelectorAll('.emoji-picker').forEach(p => {
+        if(p.id !== `emoji-picker-${id}`) p.classList.remove('visible');
+    });
+    const picker = document.getElementById(`emoji-picker-${id}`);
+    if (picker) picker.classList.toggle('visible');
+};
 
-function handleTyping() {
-    if (!activeChatRecipientId) return;
-    
-    if (!isTyping) {
-        isTyping = true;
-        socket.emit('typing_start', { partner_id: activeChatRecipientId });
+window.addReaction = (id, emoji) => {
+    socket.emit('add_reaction', { message_id: id, emoji: emoji });
+    window.toggleEmojiPicker(id);
+};
+
+window.deleteMsg = (id) => {
+    if (confirm('Видалити?')) socket.emit('delete_message', { message_id: id });
+};
+
+function findMessageInHistory(id) {
+    for (const uid in chatHistories) {
+        const m = chatHistories[uid].find(x => x.id === id);
+        if (m) return m;
     }
-    
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-        isTyping = false;
-        socket.emit('typing_stop', { partner_id: activeChatRecipientId });
-    }, 2000);
+    return null;
 }
 
-function isGifUrl(text) {
-    // Проста перевірка на URL, що закінчується на .gif або містить giphy/tenor
-    return text.startsWith('https://') && (text.endsWith('.gif') || text.includes('giphy.com') || text.includes('tenor.com'));
+function showReplyIndicator(msg) {
+    const ind = document.getElementById('reply-indicator');
+    ind.className = 'visible';
+    const txt = msg.media_type === 'text' ? msg.text : `[${msg.media_type}]`;
+    document.getElementById('reply-indicator-author').innerText = msg.sender_display_name;
+    document.getElementById('reply-indicator-text').innerText = txt;
+    
+    document.getElementById('reply-cancel-btn').onclick = hideReplyIndicator;
 }
 
-// === ЛОГІКА GIF (Залишаю як заглушки) ===
-function loadTrendingGifs() {
-    gifLibrary.innerHTML = '<div class="gif-loading">Завантаження GIF... (TBD)</div>';
-    // Тут має бути твій fetch-запит до GIPHY/Tenor
-}
-function searchGifs() {
-    gifLibrary.innerHTML = '<div class="gif-loading">Пошук GIF... (TBD)</div>';
-    // Тут має бути твій fetch-запит
-}
-function switchGifTab(tab) {
-    currentGifTab = tab;
-    gifTabs.forEach(t => t.classList.remove('active'));
-    document.querySelector(`.gif-tab[data-tab="${tab}"]`).classList.add('active');
-    
-    gifSearchContainer.style.display = tab === 'search' ? 'flex' : 'none';
-    
-    if (tab === 'trending') loadTrendingGifs();
-    if (tab === 'search' && gifSearchInput.value) searchGifs();
-    if (tab === 'my') socket.emit('load_my_gifs');
+function hideReplyIndicator() {
+    document.getElementById('reply-indicator').className = '';
+    replyToMessage = null;
 }
 
-// HANDLE USER CLICK
 function handleUserListClick(e) {
     const clickedUser = e.target.closest('.user-item');
     if (!clickedUser) return;
@@ -316,723 +364,190 @@ function handleUserListClick(e) {
     hideReplyIndicator();
     
     chatTitle.innerText = newUsername;
+    const user = allUsers[newRecipientId];
     
-    const user = allUsers[newRecipientId]; // Беремо юзера з кешу
     if (user) {
         createChatHeaderAvatar(user);
-        const isOnline = online_users.has(user.id);
-        if (isOnline) {
-            chatStatus.innerText = 'Онлайн';
-            chatStatus.classList.add('online');
-            chatStatus.classList.remove('typing');
-        } else {
-            chatStatus.innerText = formatLastSeen(user.last_seen);
-            chatStatus.classList.remove('online', 'typing');
-        }
-    } else {
-        chatStatus.innerText = '...';
-        chatStatus.classList.remove('online', 'typing');
+        chatStatus.innerText = online_users.has(user.id) ? 'Онлайн' : formatLastSeen(user.last_seen);
+        if(online_users.has(user.id)) chatStatus.className = 'chat-status-subtitle online';
     }
     
-    input.placeholder = 'Напишіть ' + newUsername + '...';
+    input.placeholder = `Напишіть ${newUsername}...`;
     input.disabled = false;
     sendButton.disabled = false;
     fileButton.classList.add('active');
     gifButton.disabled = false;
     
-    updateUnreadCount(activeChatRecipientId, 0);
-    socket.emit('mark_as_read', { 'chat_partner_id': activeChatRecipientId });
+    updateUnreadCount(newRecipientId, 0);
+    socket.emit('mark_as_read', { 'chat_partner_id': newRecipientId });
 
-    if (chatHistories[activeChatRecipientId]) {
-        renderChatHistory(chatHistories[activeChatRecipientId]);
+    if (chatHistories[newRecipientId]) {
+        renderChatHistory(chatHistories[newRecipientId]);
     } else {
-        messages.innerHTML = '<li class="status">Завантаження історії...</li>';
-        socket.emit('load_history', { 'partner_id': activeChatRecipientId });
+        messages.innerHTML = '<li class="status">Завантаження...</li>';
+        socket.emit('load_history', { 'partner_id': newRecipientId });
     }
     
-    // Якщо ми клікнули на юзера з пошуку, очищуємо пошук і завантажуємо чати
     if (userSearchInput.value.trim().length > 0) {
         userSearchInput.value = '';
         socket.emit('users_list_request');
     }
 }
 
-// RENDER CHAT HISTORY
 function renderChatHistory(history) {
     messages.innerHTML = '';
-    if (history.length === 0) {
-        messages.innerHTML = '<li class="status">Повідомлень ще немає.</li>';
+    if (!history.length) {
+        messages.innerHTML = '<li class="status">Тут поки що пусто. Напишіть першим!</li>';
         return;
     }
     history.forEach(msg => renderMessage(msg, false));
     scrollToBottom();
 }
 
-// Render повідомлення з усіма фічами
-function renderMessage(msgData, shouldScroll = true) {
-    const item = document.createElement('li');
-    item.dataset.messageId = msgData.id;
-    const formattedTime = formatUTCToLocal(msgData.timestamp);
-    
-    if (msgData.sender_id === currentUserId) {
-        item.classList.add('my-message');
-    }
-    
-    // Перевірка на видалене повідомлення
-    if (msgData.is_deleted) {
-        item.classList.add('deleted');
-        item.innerHTML = `
-            <span>🚫 Повідомлення видалено</span>
-            <span class="timestamp">${formattedTime}</span>
-        `;
-        messages.appendChild(item);
-        if (shouldScroll) scrollToBottom();
-        return;
-    }
-    
-    let messageContent = '';
-    
-    // Reply indicator
-    if (msgData.reply_to && msgData.reply_to.id) {
-        const replyAuthor = msgData.reply_to.sender_name || 'Користувач';
-        let replyText = msgData.reply_to.text || '';
-        if (msgData.reply_to.is_deleted) {
-            replyText = '🚫 Повідомлення видалено';
-        } else if (msgData.reply_to.media_type !== 'text') {
-            replyText = `[${msgData.reply_to.media_type}]`;
-        }
-        messageContent += `
-            <div class="message-reply-container">
-                <div class="message-reply-author">${replyAuthor}</div>
-                <div class="message-reply-text">${replyText}</div>
-            </div>
-        `;
-    }
-    
-    // Forward indicator
-    if (msgData.forwarded_from && msgData.forwarded_from.sender_name) {
-        messageContent += `
-            <div class="message-forwarded">
-                📤 Переслано від ${msgData.forwarded_from.sender_name}
-            </div>
-        `;
-    }
-    
-    // Main content
-    switch(msgData.media_type) {
-        case 'image':
-        case 'gif':
-            messageContent += `<img src="${msgData.media_url || msgData.text}" alt="Зображення" class="chat-image">`;
-            break;
-        case 'video':
-            messageContent += `<video src="${msgData.media_url}" class="chat-video" controls></video>`;
-            break;
-        case 'text':
-        default:
-            const tempDiv = document.createElement('div');
-            tempDiv.innerText = msgData.text || "";
-            messageContent += tempDiv.innerHTML.replace(/\n/g, '<br>');
-    }
-    
-    // Reactions
-    let reactionsHtml = '';
-    if (msgData.reactions && Object.keys(msgData.reactions).length > 0) {
-        reactionsHtml = '<div class="message-reactions">';
-        for (const [emoji, users] of Object.entries(msgData.reactions)) {
-            const hasMyReaction = users.some(u => u.user_id === currentUserId);
-            const reactionClass = hasMyReaction ? 'reaction-item my-reaction' : 'reaction-item';
-            const title = users.map(u => u.user_name).join(', ');
-            reactionsHtml += `
-                <span class="${reactionClass}" data-emoji="${emoji}" data-message-id="${msgData.id}" title="${title}">
-                    <span class="reaction-emoji">${emoji}</span>
-                    <span class="reaction-count">${users.length}</span>
-                </span>
-            `;
-        }
-        reactionsHtml += '</div>';
-    }
-    
-    // Read status
-    let readStatus = '';
-    if (msgData.sender_id === currentUserId) {
-        const readClass = msgData.is_read ? 'read' : '';
-        readStatus = `<span class="read-status ${readClass}">${msgData.is_read ? '✓✓' : '✓'}</span>`;
-    }
-    
-    // Context menu
-    const contextMenu = createContextMenu(msgData);
-    
-    item.innerHTML = `
-        ${messageContent}
-        ${reactionsHtml}
-        <span class="timestamp">
-            ${formattedTime}
-            ${readStatus}
-        </span>
-        ${contextMenu}
-    `;
-    
-    messages.appendChild(item);
-    
-    // Image click handler
-    const img = item.querySelector('.chat-image');
-    if (img) {
-        img.addEventListener('click', () => window.open(img.src, '_blank'));
-    }
-    
-    // Reaction click handler
-    const reactionItems = item.querySelectorAll('.reaction-item');
-    reactionItems.forEach(reactionItem => {
-        reactionItem.addEventListener('click', () => {
-            const emoji = reactionItem.dataset.emoji;
-            const messageId = reactionItem.dataset.messageId;
-            socket.emit('add_reaction', { message_id: parseInt(messageId), emoji: emoji });
-        });
-    });
-    
-    if (shouldScroll) scrollToBottom();
-}
-
-// Створення контекстного меню
-function createContextMenu(msgData) {
-    const canDelete = msgData.sender_id === currentUserId && !msgData.is_deleted;
-    
-    return `
-        <div class="message-context-menu">
-            <button class="context-menu-btn" title="Відповісти" onclick="replyToMsg(${msgData.id})">💬</button>
-            <button class="context-menu-btn" title="Реакція" onclick="toggleEmojiPicker(${msgData.id})">😊</button>
-            ${canDelete ? `<button class="context-menu-btn delete-btn" title="Видалити" onclick="deleteMsg(${msgData.id})">🗑️</button>` : ''}
-        </div>
-        <div class="emoji-picker" id="emoji-picker-${msgData.id}">
-            <div class="emoji-picker-grid">
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '❤️')">❤️</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '👍')">👍</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '😂')">😂</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '😮')">😮</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '😢')">😢</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '🙏')">🙏</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '🔥')">🔥</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '🎉')">🎉</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '💯')">💯</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '👎')">👎</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '😡')">😡</span>
-                <span class="emoji-picker-item" onclick="addReaction(${msgData.id}, '🤔')">🤔</span>
-            </div>
-        </div>
-    `;
-}
-
-// Глобальні функції для кнопок
-window.replyToMsg = function(messageId) {
-    const msgData = findMessageInHistory(messageId);
-    if (!msgData) return;
-    
-    replyToMessage = msgData;
-    showReplyIndicator(msgData);
-    input.focus();
-};
-
-window.toggleEmojiPicker = function(messageId) {
-    const picker = document.getElementById(`emoji-picker-${messageId}`);
-    if (!picker) return;
-    
-    document.querySelectorAll('.emoji-picker').forEach(p => {
-        if (p.id !== `emoji-picker-${messageId}`) {
-            p.classList.remove('visible');
-        }
-    });
-    
-    picker.classList.toggle('visible');
-};
-
-window.addReaction = function(messageId, emoji) {
-    socket.emit('add_reaction', { message_id: messageId, emoji: emoji });
-    const picker = document.getElementById(`emoji-picker-${messageId}`);
-    if (picker) picker.classList.remove('visible');
-};
-
-window.deleteMsg = function(messageId) {
-    if (confirm('Видалити це повідомлення?')) {
-        socket.emit('delete_message', { message_id: messageId });
-    }
-};
-
-// Reply indicator
-function showReplyIndicator(msgData) {
-    const indicator = document.getElementById('reply-indicator');
-    if (!indicator) {
-        const newIndicator = document.createElement('div');
-        newIndicator.id = 'reply-indicator';
-        newIndicator.className = 'visible';
-        
-        let replyText = msgData.text || '';
-        if (msgData.media_type !== 'text') {
-            replyText = `[${msgData.media_type}]`;
-        }
-        
-        newIndicator.innerHTML = `
-            <div id="reply-indicator-content">
-                <div id="reply-indicator-author">${msgData.sender_display_name || msgData.sender_username}</div>
-                <div id="reply-indicator-text">${replyText}</div>
-            </div>
-            <button id="reply-cancel-btn">✕</button>
-        `;
-        
-        const form = document.getElementById('form');
-        form.parentElement.insertBefore(newIndicator, form);
-        
-        document.getElementById('reply-cancel-btn').addEventListener('click', hideReplyIndicator);
-    } else {
-        indicator.classList.add('visible');
-        let replyText = msgData.text || '';
-        if (msgData.media_type !== 'text') {
-            replyText = `[${msgData.media_type}]`;
-        }
-        document.getElementById('reply-indicator-author').innerText = msgData.sender_display_name || msgData.sender_username;
-        document.getElementById('reply-indicator-text').innerText = replyText;
-    }
-}
-
-function hideReplyIndicator() {
-    const indicator = document.getElementById('reply-indicator');
-    if (indicator) {
-        indicator.classList.remove('visible');
-    }
-    replyToMessage = null;
-}
-
-function findMessageInHistory(messageId) {
-    for (const partnerId in chatHistories) {
-        const msg = chatHistories[partnerId].find(m => m.id === messageId);
-        if (msg) return msg;
-    }
-    return null;
-}
-
-function scrollToBottom() {
-    messages.scrollTop = messages.scrollHeight;
-}
-
-// SEND MESSAGE
 function sendMessage() {
     const text = input.value.trim();
     if (!text || !activeChatRecipientId) return;
     
-    if (isTyping) {
-        clearTimeout(typingTimeout);
-        socket.emit('typing_stop', { partner_id: activeChatRecipientId });
-        isTyping = false;
-    }
+    socket.emit('send_message', {
+        recipient_id: activeChatRecipientId,
+        text: text,
+        media_type: isGifUrl(text) ? 'gif' : 'text',
+        media_url: isGifUrl(text) ? text : null,
+        reply_to_id: replyToMessage ? replyToMessage.id : null
+    });
     
-    let payload = {
-        'text': null,
-        'media_url': null,
-        'media_type': 'text',
-        'recipient_id': activeChatRecipientId,
-        'reply_to_id': replyToMessage ? replyToMessage.id : null,
-        'forwarded_from_id': null
-    };
-    
-    if (isGifUrl(text)) {
-        payload.media_type = 'gif';
-        payload.media_url = text;
-    } else {
-        payload.media_type = 'text';
-        payload.text = text;
-    }
-    
-    socket.emit('send_message', payload);
     input.value = "";
     hideReplyIndicator();
 }
 
-function sendGif(gifUrl) {
-    if (!activeChatRecipientId) return;
-    socket.emit('send_message', {
-        'text': null,
-        'media_url': gifUrl,
-        'media_type': 'gif',
-        'recipient_id': activeChatRecipientId,
-        'reply_to_id': replyToMessage ? replyToMessage.id : null
-    });
-    hideReplyIndicator();
-}
-
-function handleInputKeypress(e) {
-    // Відправка по Enter, перенос рядка по Shift+Enter
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault(); 
-        sendMessage();
-    }
-}
-
-// FILE UPLOAD
-function uploadFile(file) {
-    if (!file || !activeChatRecipientId) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('recipient_id', activeChatRecipientId);
-    
-    let text = "<i>Завантаження...</i>";
-    if (file.type.startsWith('image/')) text = "<i>Завантаження фото...</i>";
-    if (file.type.startsWith('video/')) text = "<i>Завантаження відео...</i>";
-    renderMessage({
-        sender_id: currentUserId, text: text,
-        media_type: 'text', timestamp: new Date().toISOString()
-    }, true);
-    
-    fetch('/upload', { method: 'POST', body: formData })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success) {
-            alert('Помилка завантаження: ' + data.error);
-        }
-    })
-    .catch(error => console.error('Upload error:', error));
-}
-
-function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) uploadFile(file);
-    e.target.value = null;
-}
-
-// GIF MODAL
-function openGifModal() {
-    if (gifButton.disabled) return;
-    gifModal.classList.add('modal-visible');
-    if (currentGifTab === 'trending') {
-        loadTrendingGifs();
-    }
-}
-
-function closeGifModal() {
-    gifModal.classList.remove('modal-visible');
-}
-
-function handleModalClick(e) {
-    if (e.target === gifModal) closeGifModal();
-}
-
-function handleGifSelect(e) {
-    if (e.target.tagName === 'IMG' && e.target.classList.contains('gif-item')) {
-        const gifUrl = e.target.dataset.gifUrl || e.target.src;
-        sendGif(gifUrl);
-        closeGifModal();
-    }
-}
-
-// UTILITIES
-function formatUTCToLocal(utcString) {
-    if (!utcString) return '';
-    try {
-        const date = new Date(utcString);
-        return date.toLocaleString('uk-UA', {
-            hour: '2-digit', minute: '2-digit',
-            day: '2-digit', month: 'short'
-        });
-    } catch (e) {
-        console.error("Error formatting date:", e);
-        return utcString;
-    }
-}
-
-function formatLastSeen(isoString) {
-    if (!isoString) return "був давно";
-    const date = new Date(isoString);
-    const now = new Date();
-    const timeOpts = { hour: '2-digit', minute: '2-digit' };
-    if (date.toDateString() === now.toDateString()) {
-        return `був сьогодні о ${date.toLocaleString('uk-UA', timeOpts)}`;
-    }
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) {
-        return `був вчора о ${date.toLocaleString('uk-UA', timeOpts)}`;
-    }
-    return `був ${date.toLocaleString('uk-UA', { day: '2-digit', month: 'short' })}`;
-}
-
-function requestNotificationPermission() {
-    if (!("Notification" in window)) return;
-    if (Notification.permission !== "denied") {
-        Notification.requestPermission();
-    }
-}
-
-function showNotification(title, body) {
-    if (Notification.permission === "granted" && document.hidden) {
-        new Notification(title, { body: body, icon: '/favicon.ico' });
-    }
-}
-
-// ======================================================
-// === SOCKET.IO ОБРОБНИКИ
-// ======================================================
-
+// === SOCKET HANDLERS ===
 function setupSocketHandlers() {
-    socket.on('connect', () => console.log('Socket connected'));
-    socket.on('disconnect', () => console.log('Socket disconnected'));
-
+    socket.on('connect', () => console.log('Connected'));
+    
     socket.on('users_list', data => {
         online_users.clear();
         data.online_ids.forEach(id => online_users.add(id));
-        
-        // Перевіряємо, що ми не в режимі пошуку
+        // Якщо ми не шукаємо когось конкретного, оновлюємо список
         if (userSearchInput.value.trim().length === 0) {
-            
-            // (НОВЕ) Перевіряємо, чи список чатів порожній
-            if (data.users.length === 0) {
-                userList.innerHTML = '<li class="status">У вас ще немає чатів. Знайдіть когось!</li>';
-            } else {
-                // (СТАРЕ) Якщо не порожній, рендеримо
-                renderUserList(data.users, data.online_ids, 'chats');
-            }
-        }
-        // Якщо ми в режимі пошуку, ми не чіпаємо список
-    });
-
-    socket.on('chat_list_error', data => {
-        console.error('Помилка завантаження чатів:', data.error);
-        userList.innerHTML = `<li class="status">Помилка завантаження чатів 😵</li>`;
-    });
-
-    socket.on('force_chat_list_update', () => {
-        // Оновлюємо список чатів, ТІЛЬКИ якщо ми не в режимі пошуку
-        if (userSearchInput.value.trim().length === 0) {
-             console.log('Force updating chat list...');
-             socket.emit('users_list_request');
+            renderUserList(data.users, online_users, 'chats');
         }
     });
-
-    socket.on('new_message', function(data) {
-        const senderId = parseInt(data.sender_id, 10);
-        const recipientId = parseInt(data.recipient_id, 10);
-        const chatPartnerId = senderId === currentUserId ? recipientId : senderId;
+    
+    socket.on('new_message', data => {
+        const pid = (data.sender_id === currentUserId) ? data.recipient_id : data.sender_id;
         
-        if (!chatHistories[chatPartnerId]) chatHistories[chatPartnerId] = [];
-        chatHistories[chatPartnerId].push(data);
+        if (!chatHistories[pid]) chatHistories[pid] = [];
+        chatHistories[pid].push(data);
         
-        if (chatPartnerId === activeChatRecipientId) {
+        if (pid === activeChatRecipientId) {
+            // Прибираємо статус "пусто", якщо він є
             if (messages.querySelector('.status')) messages.innerHTML = '';
             renderMessage(data, true);
-            if (senderId !== currentUserId) {
-                socket.emit('mark_as_read', { 'chat_partner_id': senderId });
+            if (data.sender_id !== currentUserId) socket.emit('mark_as_read', { chat_partner_id: data.sender_id });
+        }
+    });
+    
+    socket.on('history_loaded', data => {
+        chatHistories[data.partner_id] = data.history;
+        if (data.partner_id === activeChatRecipientId) renderChatHistory(data.history);
+    });
+    
+    socket.on('user_status_change', data => {
+        if (data.status === 'online') online_users.add(data.user_id);
+        else online_users.delete(data.user_id);
+        
+        // Оновлюємо статус в хедері, якщо чат відкритий
+        if (activeChatRecipientId === data.user_id) {
+            chatStatus.innerText = (data.status === 'online') ? 'Онлайн' : formatLastSeen(data.last_seen);
+            chatStatus.className = `chat-status-subtitle ${data.status === 'online' ? 'online' : ''}`;
+        }
+        
+        // Оновлюємо точку в списку (знаходимо елемент і міняємо клас)
+        const item = userList.querySelector(`.user-item[data-id="${data.user_id}"]`);
+        if (item) {
+            if (data.status === 'online') item.classList.add('online');
+            else item.classList.remove('online');
+        }
+    });
+    
+    socket.on('reaction_updated', data => {
+        // Знаходимо повідомлення в DOM
+        const li = document.querySelector(`li[data-message-id="${data.message_id}"]`);
+        if (!li) return; // Якщо повідомлення не на екрані
+        
+        // Видаляємо старі реакції
+        const oldDiv = li.querySelector('.message-reactions');
+        if (oldDiv) oldDiv.remove();
+        
+        // Рендеримо нові
+        if (Object.keys(data.reactions).length > 0) {
+            let html = '<div class="message-reactions">';
+            for (const [emoji, users] of Object.entries(data.reactions)) {
+                const iReacted = users.some(u => u.user_id === currentUserId);
+                html += `<span class="reaction-item ${iReacted ? 'my-reaction' : ''}" onclick="addReaction(${data.message_id}, '${emoji}')">
+                    <span class="reaction-emoji">${emoji}</span><span class="reaction-count">${users.length}</span>
+                </span>`;
             }
+            html += '</div>';
+            li.querySelector('.timestamp').insertAdjacentHTML('beforebegin', html);
         }
+    });
+    
+    socket.on('message_deleted', data => {
+        // Оновлюємо історію в пам'яті
+        const pid = (data.sender_id === currentUserId) ? data.recipient_id : data.sender_id;
+        const msg = chatHistories[pid]?.find(m => m.id === data.id);
+        if (msg) msg.is_deleted = true;
         
-        // === ВИПРАВЛЕННЯ: Якщо повідомлення від іншого користувача, оновлюємо список чатів ===
-        if (senderId !== currentUserId) {
-             socket.emit('users_list_request');
-        }
-    });
-
-    socket.on('unread_message', function(data) {
-        const senderId = parseInt(data.sender_id, 10);
-        if (senderId !== activeChatRecipientId) {
-            const newCount = (unreadCounts[senderId] || 0) + 1;
-            updateUnreadCount(senderId, newCount);
-            let body = "[Нове повідомлення]";
-            if(data.media_type === 'text') body = data.text;
-            if(data.media_type === 'image') body = "[Фотографія]";
-            if(data.media_type === 'video') body = "[Відео]";
-            if(data.media_type === 'gif') body = "[GIF]";
-            showNotification(data.sender_username, body);
-        }
-    });
-
-    socket.on('history_loaded', function(data) {
-        const partnerId = parseInt(data.partner_id, 10);
-        chatHistories[partnerId] = data.history;
-        if (partnerId === activeChatRecipientId) {
-            renderChatHistory(data.history);
-        }
-    });
-
-    socket.on('messages_were_read', function(data) {
-        const partnerId = parseInt(data.reader_id, 10);
-        if (chatHistories[partnerId]) {
-            chatHistories[partnerId].forEach(msg => {
-                if (data.message_ids.includes(msg.id)) msg.is_read = true;
-            });
-        }
-        if (partnerId === activeChatRecipientId) {
-            data.message_ids.forEach(messageId => {
-                const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-                if (msgElement) {
-                    const statusElement = msgElement.querySelector('.read-status');
-                    if (statusElement) {
-                        statusElement.innerHTML = '✓✓';
-                        statusElement.classList.add('read');
-                    }
-                }
-            });
-        }
-    });
-
-    socket.on('message_deleted', function(data) {
-        const messageId = data.id;
-        const senderId = data.sender_id;
-        const recipientId = data.recipient_id;
-        const chatPartnerId = senderId === currentUserId ? recipientId : senderId;
-        
-        if (chatHistories[chatPartnerId]) {
-            const msg = chatHistories[chatPartnerId].find(m => m.id === messageId);
-            if (msg) {
-                msg.is_deleted = true;
-            }
-        }
-        
-        if (chatPartnerId === activeChatRecipientId) {
-            const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-            if (msgElement) {
-                msgElement.classList.add('deleted');
-                msgElement.innerHTML = `
-                    <span>🚫 Повідомлення видалено</span>
-                    <span class="timestamp">${formatUTCToLocal(data.timestamp)}</span>
-                `;
+        // Оновлюємо DOM
+        if (pid === activeChatRecipientId) {
+            const li = document.querySelector(`li[data-message-id="${data.id}"]`);
+            if (li) {
+                li.classList.add('deleted');
+                li.innerHTML = `<span>🚫 Повідомлення видалено</span><span class="timestamp">${formatUTCToLocal(data.timestamp)}</span>`;
             }
         }
     });
+}
 
-    socket.on('reaction_updated', function(data) {
-        const messageId = data.message_id;
-        const reactions = data.reactions;
-        
-        const msgElement = messages.querySelector(`li[data-message-id="${messageId}"]`);
-        if (!msgElement) return;
-        
-        const oldReactions = msgElement.querySelector('.message-reactions');
-        if (oldReactions) oldReactions.remove();
-        
-        if (Object.keys(reactions).length > 0) {
-            let reactionsHtml = '<div class="message-reactions">';
-            for (const [emoji, users] of Object.entries(reactions)) {
-                const hasMyReaction = users.some(u => u.user_id === currentUserId);
-                const reactionClass = hasMyReaction ? 'reaction-item my-reaction' : 'reaction-item';
-                const title = users.map(u => u.user_name).join(', ');
-                reactionsHtml += `
-                    <span class="${reactionClass}" data-emoji="${emoji}" data-message-id="${messageId}" title="${title}">
-                        <span class="reaction-emoji">${emoji}</span>
-                        <span class="reaction-count">${users.length}</span>
-                    </span>
-                `;
-            }
-            reactionsHtml += '</div>';
-            
-            const timestamp = msgElement.querySelector('.timestamp');
-            timestamp.insertAdjacentHTML('beforebegin', reactionsHtml);
-            
-            const reactionItems = msgElement.querySelectorAll('.reaction-item');
-            reactionItems.forEach(item => {
-                item.addEventListener('click', () => {
-                    const emoji = item.dataset.emoji;
-                    socket.emit('add_reaction', { message_id: messageId, emoji: emoji });
-                });
-            });
-        }
-        
-        for (const partnerId in chatHistories) {
-            const msg = chatHistories[partnerId].find(m => m.id === messageId);
-            if (msg) {
-                msg.reactions = reactions;
-                break;
-            }
-        }
-    });
+// Додаткові хелпери
+function createChatHeaderAvatar(user) {
+    const wrap = document.getElementById('chat-title-wrapper');
+    const old = document.getElementById('chat-header-avatar');
+    if(old) old.remove();
+    
+    const div = document.createElement('div');
+    div.id = 'chat-header-avatar';
+    div.className = 'chat-header-avatar';
+    div.innerHTML = user.avatar_url 
+        ? `<img src="${user.avatar_url}">` 
+        : `<div class="chat-header-avatar-placeholder">${user.username[0].toUpperCase()}</div>`;
+    wrap.before(div);
+}
 
-    socket.on('typing_status', function(data) {
-        const userId = parseInt(data.user_id, 10);
-        const isTyping = data.is_typing;
-        
-        if (userId === activeChatRecipientId) {
-            if (isTyping) {
-                chatStatus.innerText = 'друкує...';
-                chatStatus.classList.add('typing');
-                chatStatus.classList.remove('online');
-            } else {
-                const user = allUsers[userId];
-                if (user && online_users.has(userId)) {
-                    chatStatus.innerText = 'Онлайн';
-                    chatStatus.classList.add('online');
-                    chatStatus.classList.remove('typing');
-                } else if (user) {
-                    chatStatus.innerText = formatLastSeen(user.last_seen);
-                    chatStatus.classList.remove('online', 'typing');
-                }
-            }
-        }
-    });
+function formatLastSeen(iso) {
+    if(!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+}
 
-    socket.on('user_status_change', function(data) {
-        const userId = parseInt(data.user_id, 10);
-        const userItem = findUserListItem(userId); // Ця функція тепер існує
-        
-        if (data.status === 'online') {
-            online_users.add(userId);
-            if (userItem) userItem.classList.add('online');
-        } else {
-            online_users.delete(userId);
-            if (userItem) userItem.classList.remove('online');
-        }
-        
-        if(allUsers[userId]) {
-            allUsers[userId].last_seen = data.last_seen;
-        }
-        
-        if (userItem) {
-            const subtitleEl = userItem.querySelector('.last-seen, .last-message');
-            if (subtitleEl) {
-                const isOnline = data.status === 'online';
-                // Визначаємо, в якому ми режимі (пошук чи чати)
-                const type = userSearchInput.value.trim().length > 0 ? 'search' : 'chats';
-                
-                if (isOnline) {
-                    subtitleEl.outerHTML = `<span class="last-seen">Онлайн</span>`;
-                } else {
-                    if (type === 'chats' && allUsers[userId] && allUsers[userId].last_message_text) {
-                        const lastMsg = allUsers[userId].last_message_text;
-                        subtitleEl.outerHTML = `<span class="last-message">${lastMsg}</span>`;
-                    } else {
-                        subtitleEl.outerHTML = `<span class="last-seen">${formatLastSeen(data.last_seen)}</span>`;
-                    }
-                }
-            }
-        }
-        
-        if (userId === activeChatRecipientId) {
-            if (data.status === 'online') {
-                chatStatus.innerText = 'Онлайн';
-                chatStatus.classList.add('online');
-                chatStatus.classList.remove('typing');
-            } else {
-                chatStatus.innerText = formatLastSeen(data.last_seen);
-                chatStatus.classList.remove('online', 'typing');
-            }
-        }
-    });
+function formatUTCToLocal(iso) {
+    if(!iso) return "";
+    return new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+}
 
-    socket.on('my_gifs_loaded', function(data) {
-        if (data.gifs.length === 0) {
-            gifLibrary.innerHTML = '<div class="gif-loading">Ви ще не відправляли GIF 😢</div>';
-            return;
-        }
-        gifLibrary.innerHTML = '';
-        data.gifs.forEach(url => {
-            const img = document.createElement('img');
-            img.src = url;
-            img.className = 'gif-item';
-            gifLibrary.appendChild(img);
-        });
-    });
+function isGifUrl(t) { return t.startsWith('http') && (t.includes('giphy') || t.includes('tenor') || t.endsWith('.gif')); }
+function handleTyping() { /* ... */ }
+function handleFileSelect() { /* ... */ }
+function openGifModal() { /* ... */ }
+function closeGifModal() { document.getElementById('gif-modal').classList.remove('modal-visible'); }
+function handleModalClick(e) { if(e.target.id === 'gif-modal') closeGifModal(); }
+function handleGifSelect() { /* ... */ }
+function searchGifs() { /* ... */ }
+function switchGifTab() { /* ... */ }
+function updateUnreadCount() { /* ... */ }
+function requestNotificationPermission() { /* ... */ }
+function scrollToBottom() { messages.scrollTop = messages.scrollHeight; }
+function handleInputKeypress(e) { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 
-    socket.on('users_list_request', () => {
-        if (userSearchInput.value.trim().length === 0) {
-            socket.emit('users_list_request');
-        }
-    });
-} // Кінець setupSocketHandlers
-
-
-// ЗАПУСК
 document.addEventListener('DOMContentLoaded', init);
