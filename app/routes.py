@@ -4,7 +4,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader
 from datetime import datetime, timezone
 from sqlalchemy import func
-import eventlet # <--- ВАЖЛИВИЙ ІМПОРТ
+from eventlet import tpool # <--- ВИПРАВЛЕНО: Імпортуємо tpool прямо
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -20,7 +20,6 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    # Передаємо ключ (або пустий рядок) в шаблон
     giphy_key = current_app.config.get('GIPHY_API_KEY', 'dc6zaTOxFJmzC')
     return render_template('index.html', giphy_key=giphy_key)
 
@@ -127,8 +126,8 @@ def upload_avatar():
     if not file.filename: return jsonify({'success': False}), 400
     
     try:
-        # === ВИПРАВЛЕНО: Використовуємо tpool для окремого потоку ===
-        res = eventlet.tpool.execute(
+        # ВИПРАВЛЕНО: Використовуємо tpool.execute
+        res = tpool.execute(
             cloudinary.uploader.upload, 
             file, 
             folder='avatars', 
@@ -154,8 +153,8 @@ def upload_file():
         if file.mimetype.startswith('video/'): file_type = 'video'
         elif file.mimetype == 'image/gif': file_type = 'gif'
 
-        # === ВИПРАВЛЕНО: Використовуємо tpool ===
-        res = eventlet.tpool.execute(
+        # ВИПРАВЛЕНО: Використовуємо tpool.execute
+        res = tpool.execute(
             cloudinary.uploader.upload, 
             file, 
             resource_type='video' if file_type == 'video' else 'image'
