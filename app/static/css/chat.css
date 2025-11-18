@@ -228,7 +228,7 @@
     padding: 12px 16px;
     border-radius: var(--radius-md);
     word-wrap: break-word;
-    position: relative; /* Важливо для меню */
+    position: relative; 
 }
 
 #messages li:not(.my-message) {
@@ -275,7 +275,7 @@
 .message-reply-author { font-weight: 600; margin-bottom: 2px; }
 .message-forwarded { font-size: 0.75rem; opacity: 0.7; margin-bottom: 6px; font-style: italic; }
 
-/* === Reactions Display === */
+/* === Reactions === */
 .message-reactions {
     display: flex;
     flex-wrap: wrap;
@@ -296,90 +296,43 @@
 .reaction-item.my-reaction { background: var(--accent-primary); color: white; }
 .my-message .reaction-item.my-reaction { background: white; color: var(--accent-primary); }
 
-/* === FIXED: Context Menu === */
+/* === Context Menu === */
 .message-context-menu {
     position: absolute;
-    top: -35px; /* Показуємо НАД повідомленням */
-    right: 0;
+    top: 5px;
+    right: 5px;
     background: var(--bg-secondary);
     border-radius: var(--radius-sm);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     display: none;
     z-index: 100;
     border: 1px solid var(--border-color);
-    padding: 2px;
 }
-
-/* Для моїх повідомлень меню вирівнюємо по правому краю, для чужих - по лівому */
-#messages li:not(.my-message) .message-context-menu {
-    right: auto;
-    left: 0;
-}
-
-#messages li:hover .message-context-menu {
-    display: flex;
-}
-
-.context-menu-btn {
-    padding: 6px 10px;
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 1.1rem;
-    display: flex; align-items: center; justify-content: center;
-}
-.context-menu-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-radius: 4px; }
+#messages li:not(.my-message) .message-context-menu { right: auto; left: 5px; }
+#messages li:hover .message-context-menu { display: flex; }
+.context-menu-btn { padding: 4px 8px; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 1.1rem; transition: 0.2s; }
+.context-menu-btn:hover { color: var(--accent-primary); transform: scale(1.1); }
 .context-menu-btn.delete-btn:hover { color: var(--danger); }
 
-/* === FIXED: Emoji Picker === */
+/* === Emoji Picker === */
 .emoji-picker {
     position: absolute;
-    /* Розміщуємо під кнопками меню, щоб не перекривали */
-    top: 100%; 
-    margin-top: 5px;
+    top: 0;
     background: var(--bg-secondary);
     border-radius: var(--radius-md);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     padding: 8px;
     display: none;
     z-index: 200;
     border: 1px solid var(--border-color);
-    width: 180px; /* Фіксована ширина */
+    width: 160px;
 }
-
-/* Якщо повідомлення моє, меню справа */
-#messages li.my-message .emoji-picker {
-    right: 0;
-    left: auto;
-}
-
-/* Якщо повідомлення чуже, меню зліва */
-#messages li:not(.my-message) .emoji-picker {
-    left: 0;
-    right: auto;
-}
-
+#messages li.my-message .emoji-picker { right: 100%; margin-right: 10px; }
+#messages li:not(.my-message) .emoji-picker { left: 100%; margin-left: 10px; }
 .emoji-picker.visible { display: block; }
-
-.emoji-picker-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr); /* 4 в ряд */
-    gap: 4px;
-}
-
-.emoji-picker-item {
-    font-size: 1.2rem; /* Менший шрифт */
-    padding: 6px;
-    cursor: pointer;
-    border-radius: 4px;
-    text-align: center;
-    transition: transform 0.1s;
-}
-.emoji-picker-item:hover {
-    background: var(--bg-hover);
-    transform: scale(1.2);
-}
+.emoji-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.emoji-picker-item { font-size: 1.2rem; padding: 4px; cursor: pointer; border-radius: 4px; text-align: center; }
+.emoji-picker-item:hover { background: var(--bg-hover); transform: scale(1.2); }
 
 .timestamp { display: block; font-size: 0.7rem; margin-top: 6px; opacity: 0.7; }
 .read-status { margin-left: 4px; font-size: 0.8rem; }
@@ -444,20 +397,80 @@
     cursor: pointer;
 }
 
-/* ===== GIF MODAL ===== */
-#gif-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+/* ===== ВИПРАВЛЕНО: GIF MODAL ===== */
+#gif-modal { 
+    display: none; 
+    position: fixed; 
+    top: 0; left: 0; 
+    width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.8); /* Темніший фон */
+    z-index: 2000; /* Дуже високо */
+    align-items: center; 
+    justify-content: center; 
+}
 #gif-modal.modal-visible { display: flex; }
-#gif-modal-content { background: var(--bg-secondary); border-radius: var(--radius-lg); width: 90%; max-width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
-#gif-modal-header { padding: 15px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-light); }
-#gif-tabs { display: flex; padding: 10px; gap: 10px; }
-.gif-tab { flex: 1; padding: 8px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); }
-.gif-tab.active { border-bottom: 2px solid var(--accent-primary); color: var(--text-primary); }
-#gif-search-container { padding: 10px; display: flex; gap: 10px; }
-#gif-search-input { flex: 1; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; }
-#gif-library { padding: 15px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-.gif-item { width: 100%; height: 100px; object-fit: cover; cursor: pointer; border-radius: 4px; }
 
-/* Responsive */
+#gif-modal-content { 
+    background: var(--bg-secondary); 
+    border-radius: var(--radius-lg); 
+    width: 90%; 
+    max-width: 600px; 
+    max-height: 80vh; 
+    display: flex; 
+    flex-direction: column;
+    position: relative; /* Для абсолютного позиціювання хрестика */
+}
+
+#gif-modal-header { 
+    padding: 15px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center;
+    border-bottom: 1px solid var(--border-light); 
+}
+
+#gif-modal-header h4 { margin: 0; color: var(--text-primary); }
+
+/* СТИЛІ ДЛЯ ХРЕСТИКА */
+#gif-close-button {
+    width: 32px; 
+    height: 32px; 
+    border: none; 
+    background: var(--bg-tertiary); 
+    border-radius: 50%; 
+    color: var(--text-primary); 
+    font-size: 1.2rem; 
+    cursor: pointer; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    transition: 0.2s;
+}
+#gif-close-button:hover {
+    background: var(--danger);
+    color: white;
+    transform: rotate(90deg);
+}
+
+#gif-tabs { display: flex; padding: 10px; gap: 10px; }
+.gif-tab { flex: 1; padding: 8px; background: transparent; border: none; cursor: pointer; color: var(--text-secondary); border-radius: 4px; }
+.gif-tab:hover { background: var(--bg-hover); }
+.gif-tab.active { background: var(--accent-primary); color: white; }
+
+#gif-search-container { padding: 10px; display: flex; gap: 10px; }
+#gif-search-input { flex: 1; padding: 8px; border: 1px solid var(--border-color); border-radius: 4px; color: var(--text-primary); background: var(--bg-primary); }
+#gif-search-button { padding: 8px 16px; background: var(--accent-primary); color: white; border: none; border-radius: 4px; cursor: pointer; }
+
+#gif-library { 
+    padding: 15px; 
+    overflow-y: auto; 
+    display: grid; 
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); 
+    gap: 10px; 
+    min-height: 200px;
+}
+.gif-item { width: 100%; height: 100px; object-fit: cover; cursor: pointer; border-radius: 4px; background: var(--bg-tertiary); }
+
 @media (max-width: 968px) {
     #content-wrapper { grid-template-columns: 1fr; }
     #user-list-container { width: 100%; height: calc(100vh - 120px); }
