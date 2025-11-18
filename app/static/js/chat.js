@@ -2,36 +2,36 @@
 // === ГЛОБАЛЬНІ ЗМІННІ
 // ======================================================
 let activeChatRecipientId = null;
+let activeUserItem = null;
+let replyToMessage = null;
 let isTyping = false;
 let typingTimeout = null;
-let replyToMessage = null;
 
-// Кеш даних
-const allUsers = {}; // id -> user object
-const chatHistories = {}; // id -> array of messages
-const unreadCounts = {}; 
+// Кеш даних (щоб не смикати сервер зайвий раз)
+const allUsers = {}; 
+const chatHistories = {};
+const unreadCounts = {};
 const online_users = new Set();
 
-// Socket
 let socket;
 
-// Об'єкт для елементів DOM
+// Об'єкт для всіх елементів DOM (щоб не шукати їх щоразу)
 const DOM = {}; 
 
 // ======================================================
-// === ІНІЦІАЛІЗАЦІЯ
+// === 1. ІНІЦІАЛІЗАЦІЯ (START)
 // ======================================================
 function init() {
-    console.log("Chat initialized");
+    console.log("Chat initialized...");
     socket = io();
     
-    // Отримуємо ID поточного юзера
+    // Отримуємо ID поточного юзера з HTML
     const wrapper = document.getElementById('content-wrapper');
     if (wrapper) {
         window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
     }
 
-    // Кешуємо елементи DOM
+    // Знаходимо всі елементи
     DOM.userList = document.getElementById('user-list');
     DOM.searchInput = document.getElementById('user-search-input');
     DOM.messages = document.getElementById('messages');
@@ -41,35 +41,54 @@ function init() {
     DOM.chatStatus = document.getElementById('chat-with-status');
     DOM.titleWrapper = document.getElementById('chat-title-wrapper');
     DOM.backBtn = document.getElementById('back-to-chats-btn');
-
-    // GIF елементи
+    
+    // Елементи для файлів та GIF
+    DOM.fileInput = document.getElementById('file_input');
     DOM.gifButton = document.getElementById('gif_button');
     DOM.gifModal = document.getElementById('gif-modal');
     DOM.gifLibrary = document.getElementById('gif-library');
     DOM.gifSearchInput = document.getElementById('gif-search-input');
-    DOM.fileInput = document.getElementById('file_input');
+    DOM.gifSearchButton = document.getElementById('gif-search-button');
+    DOM.gifCloseButton = document.getElementById('gif-close-button');
 
-    // === ОБРОБНИКИ ПОДІЙ ===
-    if(DOM.userList) DOM.userList.addEventListener('click', handleUserClick);
-    if(DOM.searchInput) DOM.searchInput.addEventListener('input', debounce(handleSearch, 300));
-    if(DOM.sendBtn) DOM.sendBtn.addEventListener('click', sendMessage);
+    // === ПРИВ'ЯЗКА ПОДІЙ (Event Listeners) ===
     
+    // Кліки по списку юзерів
+    if(DOM.userList) DOM.userList.addEventListener('click', handleUserClick);
+    
+    // Пошук юзерів (із затримкою, щоб не спамити сервер)
+    if(DOM.searchInput) DOM.searchInput.addEventListener('input', debounce(handleSearch, 300));
+    
+    // Відправка повідомлень
+    if(DOM.sendBtn) DOM.sendBtn.addEventListener('click', sendMessage);
     if(DOM.input) {
         DOM.input.addEventListener('keypress', (e) => {
-            if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+            if(e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault(); 
+                sendMessage(); 
+            }
         });
         DOM.input.addEventListener('input', handleTyping);
     }
 
-    // GIF & File handlers
+    // Файли
     if(DOM.fileInput) DOM.fileInput.addEventListener('change', handleFileSelect);
-    if(DOM.gifButton) DOM.gifButton.addEventListener('click', () => DOM.gifModal.classList.add('modal-visible'));
-    document.getElementById('gif-close-button')?.addEventListener('click', () => DOM.gifModal.classList.remove('modal-visible'));
-    DOM.gifModal?.addEventListener('click', (e) => { if(e.target === DOM.gifModal) DOM.gifModal.classList.remove('modal-visible'); });
-    DOM.gifLibrary?.addEventListener('click', handleGifSelect);
-    document.getElementById('gif-search-button')?.addEventListener('click', searchGifs);
-    document.querySelectorAll('.gif-tab').forEach(t => t.addEventListener('click', (e) => switchGifTab(e.target.dataset.tab)));
 
+    // GIF Логіка
+    if(DOM.gifButton) DOM.gifButton.addEventListener('click', openGifModal);
+    if(DOM.gifCloseButton) DOM.gifCloseButton.addEventListener('click', closeGifModal);
+    if(DOM.gifModal) DOM.gifModal.addEventListener('click', (e) => { 
+        if(e.target === DOM.gifModal) closeGifModal(); 
+    });
+    if(DOM.gifLibrary) DOM.gifLibrary.addEventListener('click', handleGifSelect);
+    if(DOM.gifSearchButton) DOM.gifSearchButton.addEventListener('click', searchGifs);
+    
+    // Перемикання вкладок GIF
+    document.querySelectorAll('.gif-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => switchGifTab(e.target.dataset.tab));
+    });
+
+    // Кнопка "Назад" (для мобільних)
     if(DOM.backBtn) {
         DOM.backBtn.addEventListener('click', () => {
             document.getElementById('content-wrapper').classList.remove('chat-view-active');
@@ -77,34 +96,34 @@ function init() {
         });
     }
 
+    // Запускаємо сокети
     setupSocketHandlers();
 }
 
 // ======================================================
-// === ЛОГІКА КЛІКУ ПО КОРИСТУВАЧУ (ВИПРАВЛЕНА)
+// === 2. ЛОГІКА КЛІКУ ПО ЧАТУ (ВИПРАВЛЕНО)
 // ======================================================
 function handleUserClick(e) {
     const li = e.target.closest('.user-item');
     if (!li) return;
     
     const uid = parseInt(li.dataset.id);
-    // Беремо ім'я прямо з атрибута (надійніше)
     const username = li.dataset.username || "Користувач"; 
     
     console.log("Opening chat with:", uid, username);
 
     activeChatRecipientId = uid;
     
-    // 1. Оновлюємо UI списку
+    // 1. Візуально виділяємо активний чат
     document.querySelectorAll('.user-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');
     document.getElementById('content-wrapper').classList.add('chat-view-active');
     
-    // 2. Оновлюємо заголовок чату (БЕЗПЕЧНО)
+    // 2. Миттєво оновлюємо заголовок (щоб юзер не чекав)
     if (DOM.chatTitle) DOM.chatTitle.innerText = username;
     
-    // 3. Оновлюємо статус і аватар в хедері
-    const userObj = allUsers[uid]; // Може бути undefined, це ок
+    // 3. Оновлюємо статус і аватар
+    const userObj = allUsers[uid];
     const isOnline = online_users.has(uid);
     
     if (DOM.chatStatus) {
@@ -114,19 +133,20 @@ function handleUserClick(e) {
     
     createChatHeaderAvatar(userObj || { username: username, id: uid });
 
-    // 4. Активуємо інпут
+    // 4. Вмикаємо поле вводу і кнопки
     DOM.input.disabled = false;
     DOM.sendBtn.disabled = false;
+    if(DOM.gifButton) DOM.gifButton.disabled = false; // Вмикаємо кнопку GIF
     DOM.input.placeholder = `Напишіть ${username}...`;
     DOM.input.focus();
 
-    // 5. Скидаємо лічильник непрочитаних
+    // 5. Прибираємо бейдж "непрочитані"
     unreadCounts[uid] = 0;
     const badge = li.querySelector('.unread-badge');
     if(badge) badge.style.display = 'none';
     socket.emit('mark_as_read', {chat_partner_id: uid});
 
-    // 6. Завантажуємо історію
+    // 6. Завантажуємо повідомлення (з кешу або сервера)
     if (chatHistories[uid]) {
         renderMessages(chatHistories[uid]);
     } else {
@@ -134,7 +154,7 @@ function handleUserClick(e) {
         socket.emit('load_history', {partner_id: uid});
     }
     
-    // Якщо це був пошук - очищаємо його
+    // Якщо це був пошук, очищаємо поле пошуку
     if(DOM.searchInput.value.trim().length > 0) {
         DOM.searchInput.value = '';
         socket.emit('users_list_request');
@@ -142,7 +162,7 @@ function handleUserClick(e) {
 }
 
 // ======================================================
-// === ЛОГІКА ПОШУКУ ТА СПИСКУ
+// === 3. ПОШУК ТА СПИСОК ЮЗЕРІВ
 // ======================================================
 function handleSearch(e) {
     const q = e.target.value.trim();
@@ -178,13 +198,13 @@ function renderUserList(users, type='chats') {
     }
     
     users.forEach(u => {
-        allUsers[u.id] = u; // Зберігаємо в кеш
+        allUsers[u.id] = u; // Зберігаємо юзера
         
         const li = document.createElement('li');
         li.className = `user-item ${online_users.has(u.id) ? 'online' : ''}`;
         if (u.id === activeChatRecipientId) li.classList.add('active');
         
-        // ВАЖЛИВО: Зберігаємо дані в атрибутах
+        // Зберігаємо дані в HTML для швидкого доступу
         li.dataset.id = u.id;
         li.dataset.username = u.display_name || u.username;
         
@@ -217,7 +237,7 @@ function renderUserList(users, type='chats') {
 }
 
 // ======================================================
-// === СОКЕТИ
+// === 4. SOCKET.IO (КОМУНІКАЦІЯ)
 // ======================================================
 function setupSocketHandlers() {
     socket.on('connect', () => console.log('Socket Connected'));
@@ -225,8 +245,7 @@ function setupSocketHandlers() {
     socket.on('users_list', data => {
         online_users.clear();
         data.online_ids.forEach(id => online_users.add(id));
-        
-        // Оновлюємо список, ТІЛЬКИ якщо ми не шукаємо зараз
+        // Оновлюємо список тільки якщо не йде пошук
         if (DOM.searchInput.value.trim().length === 0) {
             renderUserList(data.users, 'chats');
         }
@@ -235,30 +254,24 @@ function setupSocketHandlers() {
     socket.on('new_message', data => {
         const partnerId = (data.sender_id === window.currentUserId) ? data.recipient_id : data.sender_id;
         
-        // 1. Додаємо в історію
         if(!chatHistories[partnerId]) chatHistories[partnerId] = [];
         chatHistories[partnerId].push(data);
         
-        // 2. Якщо чат відкритий - показуємо
         if(partnerId === activeChatRecipientId) {
+            // Якщо чат відкритий - показуємо повідомлення
             if (DOM.messages.querySelector('.status')) DOM.messages.innerHTML = '';
             appendMessage(data, true);
             if(data.sender_id !== window.currentUserId) {
                 socket.emit('mark_as_read', {chat_partner_id: partnerId});
             }
-        } 
-        // 3. Якщо закритий - збільшуємо лічильник
-        else if (data.sender_id !== window.currentUserId) {
+        } else if (data.sender_id !== window.currentUserId) {
+            // Якщо чат закритий - оновлюємо лічильник і прев'ю
             unreadCounts[partnerId] = (unreadCounts[partnerId] || 0) + 1;
-            // Оновлюємо тільки бейдж, якщо елемент є в DOM
             const li = document.querySelector(`.user-item[data-id="${partnerId}"]`);
             if(li) {
-                const badge = li.querySelector('.unread-badge');
-                badge.innerText = unreadCounts[partnerId];
-                badge.style.display = 'block';
-                // Оновлюємо текст останнього повідомлення
-                const msgTxt = data.media_type === 'text' ? data.text : `[${data.media_type}]`;
-                li.querySelector('.last-message').innerText = msgTxt;
+                li.querySelector('.unread-badge').innerText = unreadCounts[partnerId];
+                li.querySelector('.unread-badge').style.display = 'block';
+                li.querySelector('.last-message').innerText = data.media_type === 'text' ? data.text : `[${data.media_type}]`;
             }
         }
     });
@@ -287,21 +300,20 @@ function setupSocketHandlers() {
     });
     
     socket.on('reaction_updated', data => {
-        // Оновлюємо кеш
+        // Оновлюємо в кеші
         for(let uid in chatHistories) {
              let m = chatHistories[uid].find(x => x.id === data.message_id);
              if(m) { m.reactions = data.reactions; break; }
         }
-        // Оновлюємо UI якщо видно
+        // Оновлюємо на екрані, якщо видно
         if(activeChatRecipientId) {
              const li = document.querySelector(`li[data-message-id="${data.message_id}"]`);
              if(li) {
-                 // Перерендерюємо повідомлення або просто оновлюємо реакції
-                 // Для простоти можна перезавантажити історію з кешу, але це мерехтить
-                 // Тому просто видаляємо старі і додаємо нові
+                 // Видаляємо старі реакції
                  const oldR = li.querySelector('.message-reactions');
                  if(oldR) oldR.remove();
                  
+                 // Малюємо нові
                  if(Object.keys(data.reactions).length > 0) {
                      let html = '<div class="message-reactions">';
                      for(let [emoji, users] of Object.entries(data.reactions)) {
@@ -318,25 +330,37 @@ function setupSocketHandlers() {
     });
     
     socket.on('message_deleted', data => {
-         // Оновлюємо кеш
          const pid = (data.sender_id === window.currentUserId) ? data.recipient_id : data.sender_id;
-         if(chatHistories[pid]) {
+         if(chatHistories[pid]) { 
              const m = chatHistories[pid].find(x => x.id === data.id);
-             if(m) m.is_deleted = true;
+             if(m) m.is_deleted = true; 
          }
-         // Оновлюємо UI
-         if(pid === activeChatRecipientId) {
-             const li = document.querySelector(`li[data-message-id="${data.id}"]`);
+         if(pid === activeChatRecipientId) { 
+             const li = document.querySelector(`li[data-message-id="${data.id}"]`); 
              if(li) {
                  li.classList.add('deleted');
                  li.innerHTML = `<span>🚫 Повідомлення видалено</span><span class="timestamp">${formatUTCToLocal(data.timestamp)}</span>`;
              }
          }
     });
+    
+    socket.on('my_gifs_loaded', data => {
+        DOM.gifLibrary.innerHTML = '';
+        if(data.gifs.length === 0) {
+             DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ви ще не відправляли GIF</div>';
+             return;
+        }
+        data.gifs.forEach(url => {
+             const img = document.createElement('img');
+             img.src = url;
+             img.className = 'gif-item';
+             DOM.gifLibrary.appendChild(img);
+        });
+    });
 }
 
 // ======================================================
-// === РЕНДЕР ПОВІДОМЛЕНЬ
+// === 5. РЕНДЕР ПОВІДОМЛЕНЬ
 // ======================================================
 function renderMessages(history) {
     DOM.messages.innerHTML = '';
@@ -361,13 +385,18 @@ function appendMessage(msg, scroll=true) {
         // Reply
         if (msg.reply_to) {
             const rTxt = msg.reply_to.is_deleted ? 'Повідомлення видалено' : (msg.reply_to.text || '[Медіа]');
-            content += `<div class="message-reply-container">
-                <div class="message-reply-author">${msg.reply_to.sender_name || 'Користувач'}</div>
-                <div class="message-reply-text">${rTxt}</div>
-            </div>`;
+            content += `
+                <div class="message-reply-container">
+                    <div class="message-reply-author">${msg.reply_to.sender_name || 'Користувач'}</div>
+                    <div class="message-reply-text">${rTxt}</div>
+                </div>`;
         }
-        // Main content
-        if (msg.media_type === 'image' || msg.media_type === 'gif') {
+        // Forward
+        if (msg.forwarded_from) {
+            content += `<div class="message-forwarded">📤 Переслано від ${msg.forwarded_from.sender_name}</div>`;
+        }
+        // Медіа контент
+        if (['image','gif'].includes(msg.media_type)) {
             content += `<img src="${msg.media_url || msg.text}" class="chat-image" onclick="window.open(this.src)">`;
         } else if (msg.media_type === 'video') {
             content += `<video src="${msg.media_url}" class="chat-video" controls></video>`;
@@ -376,7 +405,7 @@ function appendMessage(msg, scroll=true) {
         }
     }
 
-    // Reactions
+    // Реакції
     let reactionsHTML = '';
     if (msg.reactions && Object.keys(msg.reactions).length > 0) {
         reactionsHTML = '<div class="message-reactions">';
@@ -389,7 +418,10 @@ function appendMessage(msg, scroll=true) {
         reactionsHTML += '</div>';
     }
     
-    // Menu (only if not deleted)
+    // Меню і Статус
+    const read = (msg.sender_id === window.currentUserId) ? 
+        `<span class="read-status ${msg.is_read ? 'read' : ''}">${msg.is_read ? '✓✓' : '✓'}</span>` : '';
+
     const menu = !msg.is_deleted ? `
         <div class="message-context-menu">
             <button class="context-menu-btn" onclick="window.reply(${msg.id})">↩️</button>
@@ -405,19 +437,21 @@ function appendMessage(msg, scroll=true) {
         </div>
     ` : '';
 
-    const time = formatUTCToLocal(msg.timestamp);
-    const read = (msg.sender_id === window.currentUserId) ? 
-        `<span class="read-status ${msg.is_read ? 'read' : ''}">${msg.is_read ? '✓✓' : '✓'}</span>` : '';
-
-    li.innerHTML = `${content} ${reactionsHTML} <span class="timestamp">${time} ${read}</span> ${menu}`;
+    li.innerHTML = `
+        ${content} 
+        ${reactionsHTML} 
+        <span class="timestamp">${formatUTCToLocal(msg.timestamp)} ${read}</span> 
+        ${menu}
+    `;
     
     DOM.messages.appendChild(li);
     if(scroll) scrollToBottom();
 }
 
 // ======================================================
-// === ДІЇ (SEND, TYPING, ETC)
+// === 6. ВІДПРАВКА ТА ІНШІ ДІЇ
 // ======================================================
+
 function sendMessage() {
     const txt = DOM.input.value.trim();
     if(!txt || !activeChatRecipientId) return;
@@ -451,15 +485,15 @@ function handleFileSelect(e) {
     const file = e.target.files[0];
     if(!file || !activeChatRecipientId) return;
     
-    // Тут можна додати лоадер
     const formData = new FormData();
     formData.append('file', file);
     formData.append('recipient_id', activeChatRecipientId);
     
+    // Відправляємо файл
     fetch('/upload', {method: 'POST', body: formData})
         .then(r => r.json())
         .then(d => {
-            if(!d.success) alert('Upload failed: ' + d.error);
+            if(!d.success) alert('Помилка: ' + d.error);
         })
         .catch(e => console.error(e));
         
@@ -467,8 +501,9 @@ function handleFileSelect(e) {
 }
 
 // ======================================================
-// === ХЕЛПЕРИ
+// === 7. ДОПОМІЖНІ ФУНКЦІЇ (HELPERS)
 // ======================================================
+
 function createChatHeaderAvatar(user) {
     const old = document.getElementById('chat-header-avatar');
     if(old) old.remove();
@@ -490,11 +525,9 @@ function createChatHeaderAvatar(user) {
 }
 
 function showReplyIndicator(msg) {
-    const ind = document.getElementById('reply-indicator');
-    ind.className = 'visible';
-    const t = msg.media_type === 'text' ? msg.text : `[${msg.media_type}]`;
+    document.getElementById('reply-indicator').className = 'visible';
     document.getElementById('reply-indicator-author').innerText = msg.sender_display_name || "User";
-    document.getElementById('reply-indicator-text').innerText = t;
+    document.getElementById('reply-indicator-text').innerText = msg.media_type === 'text' ? msg.text : `[${msg.media_type}]`;
     document.getElementById('reply-cancel-btn').onclick = hideReplyIndicator;
 }
 
@@ -524,24 +557,14 @@ function formatLastSeen(iso) {
     return `був ${d.toLocaleDateString()}`;
 }
 
-function isGifUrl(t) { return t.startsWith('http') && (t.includes('giphy') || t.includes('tenor') || t.endsWith('.gif')); }
-function scrollToBottom() { DOM.messages.scrollTop = DOM.messages.scrollHeight; }
+function isGifUrl(t) {
+    return t.startsWith('http') && (t.includes('giphy') || t.includes('tenor') || t.endsWith('.gif'));
+}
 
-// Глобальні функції для HTML onlclick
-window.reply = (id) => {
-    const msg = findMsg(id);
-    if(msg) { replyToMessage = msg; showReplyIndicator(msg); DOM.input.focus(); }
-};
-window.toggleReactions = (id) => {
-    document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
-    const p = document.getElementById(`emoji-${id}`);
-    if(p) p.style.display = (p.style.display === 'block') ? 'none' : 'block';
-};
-window.react = (id, e) => {
-    socket.emit('add_reaction', {message_id: id, emoji: e});
-    window.toggleReactions(id);
-};
-window.del = (id) => { if(confirm('Видалити?')) socket.emit('delete_message', {message_id: id}); };
+function scrollToBottom() {
+    DOM.messages.scrollTop = DOM.messages.scrollHeight;
+}
+
 function findMsg(id) {
     for(let uid in chatHistories) {
         const m = chatHistories[uid].find(x => x.id === id);
@@ -550,16 +573,87 @@ function findMsg(id) {
     return null;
 }
 
-// === GIF HELPERS ===
-function searchGifs() { /* ... implementation same as before ... */ }
-function handleGifSelect(e) { 
+// ======================================================
+// === 8. ГЛОБАЛЬНІ ФУНКЦІЇ (ДЛЯ HTML ONCLICK)
+// ======================================================
+
+window.reply = (id) => {
+    const msg = findMsg(id);
+    if(msg) {
+        replyToMessage = msg;
+        showReplyIndicator(msg);
+        DOM.input.focus();
+    }
+};
+
+window.toggleReactions = (id) => {
+    document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
+    const p = document.getElementById(`emoji-${id}`);
+    if(p) p.style.display = (p.style.display === 'block') ? 'none' : 'block';
+};
+
+window.react = (id, e) => {
+    socket.emit('add_reaction', {message_id: id, emoji: e});
+    // Примусово закриваємо меню після кліку
+    const p = document.getElementById(`emoji-${id}`);
+    if(p) p.style.display = 'none';
+};
+
+window.del = (id) => {
+    if(confirm('Видалити повідомлення?')) {
+        socket.emit('delete_message', {message_id: id});
+    }
+};
+
+// ======================================================
+// === 9. GIF ЛОГІКА
+// ======================================================
+
+function openGifModal() {
+    DOM.gifModal.classList.add('modal-visible');
+    if(currentGifTab === 'trending') loadTrendingGifs();
+}
+
+function closeGifModal() {
+    DOM.gifModal.classList.remove('modal-visible');
+}
+
+function switchGifTab(tab) {
+    currentGifTab = tab;
+    document.querySelectorAll('.gif-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.gif-tab[data-tab="${tab}"]`).classList.add('active');
+    
+    DOM.gifSearchInput.parentElement.style.display = tab === 'search' ? 'flex' : 'none';
+    
+    DOM.gifLibrary.innerHTML = '';
+    if(tab === 'trending') loadTrendingGifs();
+    if(tab === 'my') socket.emit('load_my_gifs');
+}
+
+function loadTrendingGifs() {
+    // Тут має бути API запит до GIPHY.
+    // Оскільки API ключа немає, ставимо заглушку або просимо юзера ввести
+    DOM.gifLibrary.innerHTML = '<div class="gif-loading">Функція "Тренди" потребує API ключа GIPHY</div>';
+}
+
+function searchGifs() {
+    const q = DOM.gifSearchInput.value;
+    if(!q) return;
+    DOM.gifLibrary.innerHTML = `<div class="gif-loading">Пошук "${q}"... (потребує API)</div>`;
+}
+
+function handleGifSelect(e) {
     if(e.target.tagName === 'IMG') {
         const url = e.target.src;
-        socket.emit('send_message', {recipient_id: activeChatRecipientId, text: null, media_type: 'gif', media_url: url});
-        DOM.gifModal.classList.remove('modal-visible');
+        socket.emit('send_message', {
+            recipient_id: activeChatRecipientId, 
+            text: null, 
+            media_type: 'gif', 
+            media_url: url
+        });
+        closeGifModal();
     }
 }
-function switchGifTab(tab) { /* ... */ }
 
-// Start
+// ЗАПУСК
 document.addEventListener('DOMContentLoaded', init);
