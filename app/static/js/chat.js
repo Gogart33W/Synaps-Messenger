@@ -5,31 +5,35 @@ let activeChatRecipientId = null;
 let isTyping = false;
 let typingTimeout = null;
 let replyToMessage = null;
-const allUsers = {}; 
+
+const allUsers = {};
 const chatHistories = {};
 const unreadCounts = {};
 const online_users = new Set();
-let socket;
-const DOM = {}; 
 
-// КЛЮЧ ТЕПЕР ПУСТИЙ, ВІН ПРИЙДЕ З HTML
-let GIPHY_API_KEY = null;
+let socket;
+const DOM = {};
+
+// ЗАПАСНИЙ КЛЮЧ (якщо з сервера прийде пустота)
+const FALLBACK_GIPHY_KEY = 'dc6zaTOxFJmzC'; 
+let GIPHY_API_KEY = FALLBACK_GIPHY_KEY;
 
 // ======================================================
 // === ІНІЦІАЛІЗАЦІЯ
 // ======================================================
 function init() {
-    console.log("Chat initializing...");
+    console.log("Chat initialized v4");
     socket = io();
     
     const wrapper = document.getElementById('content-wrapper');
     if (wrapper) {
         window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
-        // БЕРЕМО КЛЮЧ З HTML
-        GIPHY_API_KEY = wrapper.dataset.giphyKey;
+        // Пробуємо взяти ключ з HTML, якщо є
+        const serverKey = wrapper.dataset.giphyKey;
+        if(serverKey && serverKey.length > 5) GIPHY_API_KEY = serverKey;
     }
 
-    // Кешуємо DOM
+    // DOM Elements
     DOM.userList = document.getElementById('user-list');
     DOM.searchInput = document.getElementById('user-search-input');
     DOM.messages = document.getElementById('messages');
@@ -41,13 +45,13 @@ function init() {
     DOM.backBtn = document.getElementById('back-to-chats-btn');
     DOM.fileInput = document.getElementById('file_input');
     
-    // Елементи відповіді
+    // Reply
     DOM.replyIndicator = document.getElementById('reply-indicator');
     DOM.replyAuthor = document.getElementById('reply-indicator-author');
     DOM.replyText = document.getElementById('reply-indicator-text');
     DOM.replyCancel = document.getElementById('reply-cancel-btn');
 
-    // GIF Elements
+    // GIF
     DOM.gifButton = document.getElementById('gif_button');
     DOM.gifModal = document.getElementById('gif-modal');
     DOM.gifLibrary = document.getElementById('gif-library');
@@ -70,7 +74,7 @@ function init() {
     if(DOM.fileInput) DOM.fileInput.addEventListener('change', handleFileSelect);
     if(DOM.replyCancel) DOM.replyCancel.addEventListener('click', hideReplyIndicator);
 
-    // GIF Listeners
+    // GIF Handlers
     if(DOM.gifButton) DOM.gifButton.addEventListener('click', openGifModal);
     if(DOM.gifCloseButton) DOM.gifCloseButton.addEventListener('click', closeGifModal);
     if(DOM.gifModal) DOM.gifModal.addEventListener('click', (e) => { if(e.target === DOM.gifModal) closeGifModal(); });
@@ -93,7 +97,7 @@ function init() {
         });
     }
 
-    // Закриття меню при кліку поза ним
+    // GLOBAL CLICK to close menus
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.message-context-menu') && !e.target.closest('.emoji-picker')) {
             document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
@@ -104,7 +108,7 @@ function init() {
 }
 
 // ======================================================
-// === ЛОГІКА ЧАТУ
+// === CHAT LOGIC
 // ======================================================
 function handleUserClick(e) {
     const li = e.target.closest('.user-item');
@@ -133,7 +137,6 @@ function handleUserClick(e) {
     DOM.input.disabled = false;
     DOM.sendBtn.disabled = false;
     if(DOM.gifButton) DOM.gifButton.disabled = false;
-    
     DOM.input.placeholder = `Напишіть ${username}...`;
     DOM.input.focus();
 
@@ -242,6 +245,7 @@ function setupSocketHandlers() {
     
     socket.on('user_status_change', data => {
         if(data.status === 'online') online_users.add(data.user_id); else online_users.delete(data.user_id);
+        
         if(activeChatRecipientId === data.user_id && DOM.chatStatus) {
             DOM.chatStatus.innerText = (data.status === 'online') ? 'Онлайн' : formatLastSeen(data.last_seen);
             DOM.chatStatus.className = `chat-status-subtitle ${data.status === 'online' ? 'online' : ''}`;
@@ -285,6 +289,20 @@ function setupSocketHandlers() {
                 li.innerHTML = `<span>🚫 Повідомлення видалено</span><span class="timestamp">${formatUTCToLocal(data.timestamp)}</span>`;
             }
         }
+    });
+    
+    socket.on('my_gifs_loaded', data => {
+        DOM.gifLibrary.innerHTML = '';
+        if(data.gifs.length === 0) {
+             DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ви ще не відправляли GIF</div>';
+             return;
+        }
+        data.gifs.forEach(url => {
+             const img = document.createElement('img');
+             img.src = url;
+             img.className = 'gif-item';
+             DOM.gifLibrary.appendChild(img);
+        });
     });
 }
 
@@ -419,16 +437,22 @@ window.react = (id, e) => {
 window.del = (id) => { if(confirm('Видалити?')) socket.emit('delete_message', {message_id: id}); };
 
 // === GIF ===
+let currentGifTab = 'trending';
+
 function openGifModal() { 
     DOM.gifModal.classList.add('modal-visible'); 
+    // Завжди оновлюємо контент при відкритті
     if(currentGifTab==='trending') loadTrendingGifs(); 
+    if(currentGifTab==='my') socket.emit('load_my_gifs');
 }
 function closeGifModal() { DOM.gifModal.classList.remove('modal-visible'); }
+
 function switchGifTab(tab) {
     currentGifTab = tab;
     document.querySelectorAll('.gif-tab').forEach(t => t.classList.remove('active'));
     document.querySelector(`.gif-tab[data-tab="${tab}"]`).classList.add('active');
     DOM.gifSearchInput.parentElement.style.display = tab === 'search' ? 'flex' : 'none';
+    
     DOM.gifLibrary.innerHTML = '';
     if(tab==='my') socket.emit('load_my_gifs');
     if(tab==='trending') loadTrendingGifs();
@@ -443,7 +467,6 @@ function renderGifs(data) {
     });
 }
 function loadTrendingGifs() {
-    if (!GIPHY_API_KEY) { DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ключ не знайдено</div>'; return; }
     DOM.gifLibrary.innerHTML = '<div class="gif-loading">Завантаження...</div>';
     fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`)
     .then(r=>r.json()).then(d=>renderGifs(d.data))
@@ -451,7 +474,6 @@ function loadTrendingGifs() {
 }
 function searchGifs() {
     const q = DOM.gifSearchInput.value; if(!q) return;
-    if (!GIPHY_API_KEY) { DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ключ не знайдено</div>'; return; }
     DOM.gifLibrary.innerHTML = '<div class="gif-loading">Пошук...</div>';
     fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${q}&limit=20`)
     .then(r=>r.json()).then(d=>renderGifs(d.data))

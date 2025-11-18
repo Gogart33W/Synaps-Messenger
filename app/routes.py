@@ -1,9 +1,10 @@
 # app/routes.py
-from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify, current_app # <-- ДОДАНО current_app
+from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify, current_app
 from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader
 from datetime import datetime, timezone
 from sqlalchemy import func
+import eventlet # <--- ВАЖЛИВИЙ ІМПОРТ
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -19,15 +20,13 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    # Беремо ключ з налаштувань сервера і передаємо в шаблон
-    giphy_key = current_app.config.get('GIPHY_API_KEY', '')
+    # Передаємо ключ (або пустий рядок) в шаблон
+    giphy_key = current_app.config.get('GIPHY_API_KEY', 'dc6zaTOxFJmzC')
     return render_template('index.html', giphy_key=giphy_key)
 
-# ... (решта файлу без змін, просто скопіюй свій попередній код нижче функції index) ...
 @main.route('/search_users', methods=['POST'])
 @login_required
 def search_users():
-    """Пошук користувачів"""
     try:
         query = request.json.get('query', '').strip()
         if not query or len(query) < 2:
@@ -49,7 +48,7 @@ def search_users():
         
         return jsonify({'users': results})
     except Exception as e:
-        print(f"Error searching users: {e}")
+        print(f"Search error: {e}")
         return jsonify({'users': []}), 500
 
 @main.route('/user/<int:user_id>')
@@ -62,8 +61,7 @@ def view_user_profile(user_id):
     is_fav = False
     try:
         is_fav = current_user.is_favorite(user)
-    except:
-        pass
+    except: pass
         
     return render_template('user_profile.html', user=user, is_favorite=is_fav)
 
@@ -72,16 +70,14 @@ def view_user_profile(user_id):
 def add_favorite(user_id):
     try:
         user = User.query.get(user_id)
-        if not user or user.id == current_user.id:
-            return jsonify({'success': False}), 400
-        
+        if not user or user.id == current_user.id: return jsonify({'success': False}), 400
         if not current_user.is_favorite(user):
             current_user.add_favorite(user)
             db.session.commit()
         return jsonify({'success': True})
-    except Exception as e:
+    except:
         db.session.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False}), 500
 
 @main.route('/remove_favorite/<int:user_id>', methods=['POST'])
 @login_required
@@ -89,12 +85,10 @@ def remove_favorite(user_id):
     try:
         user = User.query.get(user_id)
         if not user: return jsonify({'success': False}), 404
-        
         current_user.remove_favorite(user)
         db.session.commit()
         return jsonify({'success': True})
-    except:
-        return jsonify({'success': False}), 500
+    except: return jsonify({'success': False}), 500
 
 @main.route('/profile')
 @login_required
@@ -106,9 +100,7 @@ def profile():
 def update_profile():
     data = request.form
     display_name = data.get('display_name', '').strip()
-    if display_name:
-        current_user.display_name = display_name
-    
+    if display_name: current_user.display_name = display_name
     bio = data.get('bio', '').strip()
     current_user.bio = bio if bio else None
     
@@ -116,7 +108,7 @@ def update_profile():
     if new_username and new_username != current_user.username:
         existing = User.query.filter_by(username=new_username).first()
         if existing:
-            flash('Це ім\'я вже зайняте')
+            flash('Ім\'я зайняте')
             return redirect(url_for('main.profile'))
         current_user.username = new_username
     
@@ -125,22 +117,19 @@ def update_profile():
         flash('Профіль оновлено!')
     except:
         db.session.rollback()
-        flash('Помилка збереження')
-        
     return redirect(url_for('main.index'))
 
 @main.route('/upload_avatar', methods=['POST'])
 @login_required
 def upload_avatar():
-    if 'avatar' not in request.files:
-        return jsonify({'success': False, 'error': 'No file'}), 400
-    
+    if 'avatar' not in request.files: return jsonify({'success': False}), 400
     file = request.files['avatar']
-    if not file.filename:
-        return jsonify({'success': False, 'error': 'Empty file'}), 400
-        
+    if not file.filename: return jsonify({'success': False}), 400
+    
     try:
-        res = cloudinary.uploader.upload(
+        # === ВИПРАВЛЕНО: Використовуємо tpool для окремого потоку ===
+        res = eventlet.tpool.execute(
+            cloudinary.uploader.upload, 
             file, 
             folder='avatars', 
             transformation=[{'width': 200, 'height': 200, 'crop': 'fill'}]
@@ -149,6 +138,7 @@ def upload_avatar():
         db.session.commit()
         return jsonify({'success': True, 'avatar_url': current_user.avatar_url})
     except Exception as e:
+        print(f"Avatar upload error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @main.route('/upload', methods=['POST'])
@@ -158,15 +148,18 @@ def upload_file():
         if 'file' not in request.files: return jsonify({"error": "No file"}), 400
         file = request.files['file']
         recipient_id = request.form.get('recipient_id')
-        
-        if not file.filename or not recipient_id:
-            return jsonify({"error": "Invalid data"}), 400
+        if not file.filename or not recipient_id: return jsonify({"error": "Invalid data"}), 400
 
         file_type = 'image'
         if file.mimetype.startswith('video/'): file_type = 'video'
         elif file.mimetype == 'image/gif': file_type = 'gif'
 
-        res = cloudinary.uploader.upload(file, resource_type='video' if file_type == 'video' else 'image')
+        # === ВИПРАВЛЕНО: Використовуємо tpool ===
+        res = eventlet.tpool.execute(
+            cloudinary.uploader.upload, 
+            file, 
+            resource_type='video' if file_type == 'video' else 'image'
+        )
         
         msg = Message(
             sender_id=current_user.id,
@@ -187,27 +180,22 @@ def upload_file():
         return jsonify({"success": True, "data": data})
     except Exception as e:
         db.session.rollback()
-        print(f"Upload error: {e}")
+        print(f"File upload error: {e}")
         return jsonify({"error": "Upload failed"}), 500
 
 @main.route('/login', methods=['GET', 'POST'])
 def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('main.index'))
+    if current_user.is_authenticated: return redirect(url_for('main.index'))
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         if user is None or not user.check_password(form.password.data):
-            flash('Неправильний логін або пароль')
+            flash('Неправильний логін/пароль')
             return redirect(url_for('main.login'))
         login_user(user, remember=form.remember_me.data)
-        
         user.last_seen = datetime.now(timezone.utc)
-        try:
-            db.session.commit()
-        except:
-            db.session.rollback()
-            
+        try: db.session.commit()
+        except: pass
         return redirect(url_for('main.index'))
     return render_template('login.html', form=form)
 
@@ -215,17 +203,14 @@ def login():
 def logout():
     if current_user.is_authenticated:
         current_user.last_seen = datetime.now(timezone.utc)
-        try:
-            db.session.commit()
-        except:
-            pass
+        try: db.session.commit()
+        except: pass
     logout_user()
     return redirect(url_for('main.login'))
 
 @main.route('/register', methods=['GET', 'POST'])
 def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('main.index'))
+    if current_user.is_authenticated: return redirect(url_for('main.index'))
     form = RegistrationForm()
     if form.validate_on_submit():
         try:
@@ -233,9 +218,9 @@ def register():
             user.set_password(form.password.data)
             db.session.add(user)
             db.session.commit()
-            flash('Реєстрація успішна! Увійдіть.')
+            flash('Реєстрація успішна!')
             return redirect(url_for('main.login'))
         except:
             db.session.rollback()
-            flash('Помилка реєстрації (можливо, ім\'я зайняте)')
+            flash('Помилка (ім\'я зайняте?)')
     return render_template('register.html', form=form)
