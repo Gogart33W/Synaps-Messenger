@@ -1,14 +1,17 @@
 # config.py
 import os
 import sqlalchemy.pool
-import cloudinary # pyright: ignore[reportMissingImports]
-from dotenv import load_dotenv # pyright: ignore[reportMissingImports]
+import cloudinary
+from dotenv import load_dotenv
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '.env'))
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY')
+    # Додали зчитування ключа
+    GIPHY_API_KEY = os.environ.get('GIPHY_API_KEY')
+    
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
         'sqlite:///' + os.path.join(basedir, 'app', 'synaps.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False

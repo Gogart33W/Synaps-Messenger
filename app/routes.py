@@ -1,5 +1,5 @@
 # app/routes.py
-from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify
+from flask import render_template, redirect, url_for, flash, Blueprint, request, jsonify, current_app # <-- ДОДАНО current_app
 from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader
 from datetime import datetime, timezone
@@ -19,8 +19,11 @@ def load_user(id):
 @main.route('/index')
 @login_required
 def index():
-    return render_template('index.html')
+    # Беремо ключ з налаштувань сервера і передаємо в шаблон
+    giphy_key = current_app.config.get('GIPHY_API_KEY', '')
+    return render_template('index.html', giphy_key=giphy_key)
 
+# ... (решта файлу без змін, просто скопіюй свій попередній код нижче функції index) ...
 @main.route('/search_users', methods=['POST'])
 @login_required
 def search_users():
@@ -30,7 +33,6 @@ def search_users():
         if not query or len(query) < 2:
             return jsonify({'users': []})
         
-        # Пошук по юзернейму АБО відображуваному імені
         users = User.query.filter(
             db.or_(
                 User.username.ilike(f'%{query}%'),
@@ -57,7 +59,6 @@ def view_user_profile(user_id):
     if user.id == current_user.id:
         return redirect(url_for('main.profile'))
     
-    # Безпечна перевірка, щоб не викликати 500 у шаблоні
     is_fav = False
     try:
         is_fav = current_user.is_favorite(user)
@@ -180,7 +181,6 @@ def upload_file():
         socketio.emit('new_message', data, room=int(recipient_id))
         socketio.emit('new_message', data, room=current_user.id)
         
-        # Оновлюємо списки чатів
         socketio.emit('force_chat_list_update', room=current_user.id)
         socketio.emit('force_chat_list_update', room=int(recipient_id))
         

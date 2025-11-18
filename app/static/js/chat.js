@@ -11,19 +11,25 @@ const unreadCounts = {};
 const online_users = new Set();
 let socket;
 const DOM = {}; 
-const GIPHY_API_KEY = 'dc6zaTOxFJmzC'; 
+
+// КЛЮЧ ТЕПЕР ПУСТИЙ, ВІН ПРИЙДЕ З HTML
+let GIPHY_API_KEY = null;
 
 // ======================================================
 // === ІНІЦІАЛІЗАЦІЯ
 // ======================================================
 function init() {
-    console.log("App initialized v2");
+    console.log("Chat initializing...");
     socket = io();
     
     const wrapper = document.getElementById('content-wrapper');
-    if (wrapper) window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
+    if (wrapper) {
+        window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
+        // БЕРЕМО КЛЮЧ З HTML
+        GIPHY_API_KEY = wrapper.dataset.giphyKey;
+    }
 
-    // Cache DOM
+    // Кешуємо DOM
     DOM.userList = document.getElementById('user-list');
     DOM.searchInput = document.getElementById('user-search-input');
     DOM.messages = document.getElementById('messages');
@@ -35,18 +41,19 @@ function init() {
     DOM.backBtn = document.getElementById('back-to-chats-btn');
     DOM.fileInput = document.getElementById('file_input');
     
+    // Елементи відповіді
+    DOM.replyIndicator = document.getElementById('reply-indicator');
+    DOM.replyAuthor = document.getElementById('reply-indicator-author');
+    DOM.replyText = document.getElementById('reply-indicator-text');
+    DOM.replyCancel = document.getElementById('reply-cancel-btn');
+
+    // GIF Elements
     DOM.gifButton = document.getElementById('gif_button');
     DOM.gifModal = document.getElementById('gif-modal');
     DOM.gifLibrary = document.getElementById('gif-library');
     DOM.gifSearchInput = document.getElementById('gif-search-input');
     DOM.gifSearchButton = document.getElementById('gif-search-button');
     DOM.gifCloseButton = document.getElementById('gif-close-button');
-    
-    // Індикатор відповіді (тепер він точно є в HTML)
-    DOM.replyIndicator = document.getElementById('reply-indicator');
-    DOM.replyAuthor = document.getElementById('reply-indicator-author');
-    DOM.replyText = document.getElementById('reply-indicator-text');
-    DOM.replyCancel = document.getElementById('reply-cancel-btn');
 
     // Listeners
     if(DOM.userList) DOM.userList.addEventListener('click', handleUserClick);
@@ -61,6 +68,7 @@ function init() {
     }
 
     if(DOM.fileInput) DOM.fileInput.addEventListener('change', handleFileSelect);
+    if(DOM.replyCancel) DOM.replyCancel.addEventListener('click', hideReplyIndicator);
 
     // GIF Listeners
     if(DOM.gifButton) DOM.gifButton.addEventListener('click', openGifModal);
@@ -84,10 +92,8 @@ function init() {
             activeChatRecipientId = null;
         });
     }
-    
-    if(DOM.replyCancel) DOM.replyCancel.addEventListener('click', hideReplyIndicator);
 
-    // Закриття меню реакцій при кліку "мимо"
+    // Закриття меню при кліку поза ним
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.message-context-menu') && !e.target.closest('.emoji-picker')) {
             document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
@@ -136,8 +142,9 @@ function handleUserClick(e) {
     if(badge) badge.style.display = 'none';
     socket.emit('mark_as_read', {chat_partner_id: uid});
 
-    if (chatHistories[uid]) renderMessages(chatHistories[uid]);
-    else {
+    if (chatHistories[uid]) {
+        renderMessages(chatHistories[uid]);
+    } else {
         DOM.messages.innerHTML = '<li class="status">Завантаження історії...</li>';
         socket.emit('load_history', {partner_id: uid});
     }
@@ -184,10 +191,7 @@ function renderUserList(users, type='chats') {
             ? `<img src="${u.avatar_url}" class="user-avatar-img">` 
             : `<div class="user-avatar-placeholder">${u.username[0].toUpperCase()}</div>`;
         
-        let subText = '';
-        if(type==='chats') subText = `<span class="last-message">${u.last_message_text || ''}</span>`;
-        else subText = `<span class="last-seen">${u.username}</span>`;
-        
+        let subText = type==='chats' ? `<span class="last-message">${u.last_message_text || ''}</span>` : `<span class="last-seen">${u.username}</span>`;
         const count = unreadCounts[u.id] || 0;
         
         li.innerHTML = `
@@ -199,6 +203,9 @@ function renderUserList(users, type='chats') {
     });
 }
 
+// ======================================================
+// === SOCKETS
+// ======================================================
 function setupSocketHandlers() {
     socket.on('connect', () => console.log('Connected'));
     
@@ -399,7 +406,7 @@ function findMsg(id) { for(let uid in chatHistories) { const m = chatHistories[u
 // === GLOBAL ===
 window.reply = (id) => { const m = findMsg(id); if(m) { replyToMessage = m; showReplyIndicator(m); DOM.input.focus(); } };
 window.toggleReactions = (id, e) => {
-    if(e) e.stopPropagation(); // Зупиняємо спливання, щоб глобальний клік не закрив відразу
+    if(e) e.stopPropagation();
     document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
     const el = document.getElementById(`emoji-${id}`);
     if(el) el.style.display = el.style.display==='block' ? 'none' : 'block';
@@ -436,13 +443,15 @@ function renderGifs(data) {
     });
 }
 function loadTrendingGifs() {
+    if (!GIPHY_API_KEY) { DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ключ не знайдено</div>'; return; }
     DOM.gifLibrary.innerHTML = '<div class="gif-loading">Завантаження...</div>';
     fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`)
     .then(r=>r.json()).then(d=>renderGifs(d.data))
-    .catch(()=>DOM.gifLibrary.innerHTML='<div class="gif-loading">Помилка (API)</div>');
+    .catch(()=>DOM.gifLibrary.innerHTML='<div class="gif-loading">Помилка (API Key?)</div>');
 }
 function searchGifs() {
     const q = DOM.gifSearchInput.value; if(!q) return;
+    if (!GIPHY_API_KEY) { DOM.gifLibrary.innerHTML = '<div class="gif-loading">Ключ не знайдено</div>'; return; }
     DOM.gifLibrary.innerHTML = '<div class="gif-loading">Пошук...</div>';
     fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${q}&limit=20`)
     .then(r=>r.json()).then(d=>renderGifs(d.data))

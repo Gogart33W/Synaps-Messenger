@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Чат - Synaps{% endblock %}
 {% block content %}
-    <div id="content-wrapper" data-current-user-id="{{ current_user.id }}">
+    <div id="content-wrapper" 
+         data-current-user-id="{{ current_user.id }}" 
+         data-giphy-key="{{ giphy_key }}">
+         
         <div id="user-list-container">
             <h3>Чати</h3>
             
