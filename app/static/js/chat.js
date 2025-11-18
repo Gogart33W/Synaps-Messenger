@@ -1,36 +1,29 @@
 // ======================================================
-// === ГЛОБАЛЬНІ ЗМІННІ ===
+// === ГЛОБАЛЬНІ ЗМІННІ
 // ======================================================
 let activeChatRecipientId = null;
 let isTyping = false;
 let typingTimeout = null;
 let replyToMessage = null;
-
-// Кеш даних
 const allUsers = {}; 
 const chatHistories = {};
 const unreadCounts = {};
 const online_users = new Set();
-
 let socket;
 const DOM = {}; 
-
-// ПУБЛІЧНИЙ API KEY ДЛЯ GIF (це beta-ключ, він може мати ліміти, але працює)
 const GIPHY_API_KEY = 'dc6zaTOxFJmzC'; 
 
 // ======================================================
-// === ІНІЦІАЛІЗАЦІЯ ===
+// === ІНІЦІАЛІЗАЦІЯ
 // ======================================================
 function init() {
-    console.log("App initialized");
+    console.log("App initialized v2");
     socket = io();
     
     const wrapper = document.getElementById('content-wrapper');
-    if (wrapper) {
-        window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
-    }
+    if (wrapper) window.currentUserId = parseInt(wrapper.dataset.currentUserId, 10);
 
-    // Кешуємо всі елементи
+    // Cache DOM
     DOM.userList = document.getElementById('user-list');
     DOM.searchInput = document.getElementById('user-search-input');
     DOM.messages = document.getElementById('messages');
@@ -42,15 +35,20 @@ function init() {
     DOM.backBtn = document.getElementById('back-to-chats-btn');
     DOM.fileInput = document.getElementById('file_input');
     
-    // GIF Elements
     DOM.gifButton = document.getElementById('gif_button');
     DOM.gifModal = document.getElementById('gif-modal');
     DOM.gifLibrary = document.getElementById('gif-library');
     DOM.gifSearchInput = document.getElementById('gif-search-input');
     DOM.gifSearchButton = document.getElementById('gif-search-button');
     DOM.gifCloseButton = document.getElementById('gif-close-button');
+    
+    // Індикатор відповіді (тепер він точно є в HTML)
+    DOM.replyIndicator = document.getElementById('reply-indicator');
+    DOM.replyAuthor = document.getElementById('reply-indicator-author');
+    DOM.replyText = document.getElementById('reply-indicator-text');
+    DOM.replyCancel = document.getElementById('reply-cancel-btn');
 
-    // === LISTENERS ===
+    // Listeners
     if(DOM.userList) DOM.userList.addEventListener('click', handleUserClick);
     if(DOM.searchInput) DOM.searchInput.addEventListener('input', debounce(handleSearch, 500));
     if(DOM.sendBtn) DOM.sendBtn.addEventListener('click', sendMessage);
@@ -67,11 +65,14 @@ function init() {
     // GIF Listeners
     if(DOM.gifButton) DOM.gifButton.addEventListener('click', openGifModal);
     if(DOM.gifCloseButton) DOM.gifCloseButton.addEventListener('click', closeGifModal);
-    if(DOM.gifModal) DOM.gifModal.addEventListener('click', (e) => { 
-        if(e.target === DOM.gifModal) closeGifModal(); 
-    });
+    if(DOM.gifModal) DOM.gifModal.addEventListener('click', (e) => { if(e.target === DOM.gifModal) closeGifModal(); });
     if(DOM.gifLibrary) DOM.gifLibrary.addEventListener('click', handleGifSelect);
     if(DOM.gifSearchButton) DOM.gifSearchButton.addEventListener('click', searchGifs);
+    if(DOM.gifSearchInput) {
+        DOM.gifSearchInput.addEventListener('keypress', (e) => {
+            if(e.key === 'Enter') { e.preventDefault(); searchGifs(); }
+        });
+    }
     
     document.querySelectorAll('.gif-tab').forEach(t => {
         t.addEventListener('click', (e) => switchGifTab(e.target.dataset.tab));
@@ -83,12 +84,21 @@ function init() {
             activeChatRecipientId = null;
         });
     }
+    
+    if(DOM.replyCancel) DOM.replyCancel.addEventListener('click', hideReplyIndicator);
+
+    // Закриття меню реакцій при кліку "мимо"
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.message-context-menu') && !e.target.closest('.emoji-picker')) {
+            document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
+        }
+    });
 
     setupSocketHandlers();
 }
 
 // ======================================================
-// === ЛОГІКА ЧАТУ ===
+// === ЛОГІКА ЧАТУ
 // ======================================================
 function handleUserClick(e) {
     const li = e.target.closest('.user-item');
@@ -99,7 +109,6 @@ function handleUserClick(e) {
     
     activeChatRecipientId = uid;
     
-    // UI Updates
     document.querySelectorAll('.user-item').forEach(i => i.classList.remove('active'));
     li.classList.add('active');
     document.getElementById('content-wrapper').classList.add('chat-view-active');
@@ -115,28 +124,24 @@ function handleUserClick(e) {
 
     createChatHeaderAvatar(user || {username: username, id: uid});
 
-    // Unlock inputs
     DOM.input.disabled = false;
     DOM.sendBtn.disabled = false;
     if(DOM.gifButton) DOM.gifButton.disabled = false;
+    
     DOM.input.placeholder = `Напишіть ${username}...`;
     DOM.input.focus();
 
-    // Clear unread
     unreadCounts[uid] = 0;
     const badge = li.querySelector('.unread-badge');
     if(badge) badge.style.display = 'none';
     socket.emit('mark_as_read', {chat_partner_id: uid});
 
-    // Load history
-    if (chatHistories[uid]) {
-        renderMessages(chatHistories[uid]);
-    } else {
+    if (chatHistories[uid]) renderMessages(chatHistories[uid]);
+    else {
         DOM.messages.innerHTML = '<li class="status">Завантаження історії...</li>';
         socket.emit('load_history', {partner_id: uid});
     }
     
-    // Clear search
     if(DOM.searchInput.value.trim().length > 0) {
         DOM.searchInput.value = '';
         socket.emit('users_list_request');
@@ -194,9 +199,6 @@ function renderUserList(users, type='chats') {
     });
 }
 
-// ======================================================
-// === MESSAGES & SOCKETS ===
-// ======================================================
 function setupSocketHandlers() {
     socket.on('connect', () => console.log('Connected'));
     
@@ -217,7 +219,6 @@ function setupSocketHandlers() {
             if(data.sender_id !== window.currentUserId) socket.emit('mark_as_read', {chat_partner_id: pid});
         } else if (data.sender_id !== window.currentUserId) {
             unreadCounts[pid] = (unreadCounts[pid] || 0) + 1;
-            // Update UI directly if possible
             const li = document.querySelector(`.user-item[data-id="${pid}"]`);
             if(li) {
                 li.querySelector('.unread-badge').innerText = unreadCounts[pid];
@@ -234,23 +235,19 @@ function setupSocketHandlers() {
     
     socket.on('user_status_change', data => {
         if(data.status === 'online') online_users.add(data.user_id); else online_users.delete(data.user_id);
-        
         if(activeChatRecipientId === data.user_id && DOM.chatStatus) {
             DOM.chatStatus.innerText = (data.status === 'online') ? 'Онлайн' : formatLastSeen(data.last_seen);
             DOM.chatStatus.className = `chat-status-subtitle ${data.status === 'online' ? 'online' : ''}`;
         }
-        
         const li = document.querySelector(`.user-item[data-id="${data.user_id}"]`);
         if(li) (data.status === 'online') ? li.classList.add('online') : li.classList.remove('online');
     });
 
     socket.on('reaction_updated', data => {
-        // Update cache
         for(let uid in chatHistories) {
             let m = chatHistories[uid].find(x => x.id === data.message_id);
             if(m) { m.reactions = data.reactions; break; }
         }
-        // Update UI
         if(activeChatRecipientId) {
             const li = document.querySelector(`li[data-message-id="${data.message_id}"]`);
             if(li) {
@@ -312,14 +309,14 @@ function appendMessage(msg, scroll=true) {
         else content += `<div>${(msg.text||"").replace(/\n/g, '<br>')}</div>`;
     }
 
-    let reactions = '';
+    let reactionsHTML = '';
     if(msg.reactions && Object.keys(msg.reactions).length > 0) {
-        reactions = '<div class="message-reactions">';
+        reactionsHTML = '<div class="message-reactions">';
         for(let [e, u] of Object.entries(msg.reactions)) {
             const my = u.some(x => x.user_id === window.currentUserId);
-            reactions += `<span class="reaction-item ${my?'my-reaction':''}" onclick="window.react(${msg.id}, '${e}')"><span class="reaction-emoji">${e}</span><span class="reaction-count">${u.length}</span></span>`;
+            reactionsHTML += `<span class="reaction-item ${my?'my-reaction':''}" onclick="window.react(${msg.id}, '${e}')"><span class="reaction-emoji">${e}</span><span class="reaction-count">${u.length}</span></span>`;
         }
-        reactions += '</div>';
+        reactionsHTML += '</div>';
     }
 
     const time = formatUTCToLocal(msg.timestamp);
@@ -328,16 +325,18 @@ function appendMessage(msg, scroll=true) {
     const menu = !msg.is_deleted ? `
         <div class="message-context-menu">
             <button class="context-menu-btn" onclick="window.reply(${msg.id})">↩️</button>
-            <button class="context-menu-btn" onclick="window.toggleReactions(${msg.id})">😀</button>
+            <button class="context-menu-btn" onclick="window.toggleReactions(${msg.id}, event)">😀</button>
             ${msg.sender_id===window.currentUserId ? `<button class="context-menu-btn delete-btn" onclick="window.del(${msg.id})">🗑️</button>` : ''}
         </div>
         <div class="emoji-picker" id="emoji-${msg.id}">
             <div class="emoji-picker-grid">
-                ${['❤️','👍','😂','😮','😢','😡','🔥','🎉'].map(e => `<span class="emoji-picker-item" onclick="window.react(${msg.id}, '${e}')">${e}</span>`).join('')}
+                ${['❤️','👍','😂','😮','😢','😡','🔥','🎉'].map(e => 
+                    `<span class="emoji-picker-item" onclick="window.react(${msg.id}, '${e}')">${e}</span>`
+                ).join('')}
             </div>
         </div>` : '';
 
-    li.innerHTML = `${content} ${reactions} <span class="timestamp">${time} ${read}</span> ${menu}`;
+    li.innerHTML = `${content} ${reactionsHTML} <span class="timestamp">${time} ${read}</span> ${menu}`;
     DOM.messages.appendChild(li);
     if(scroll) scrollToBottom();
 }
@@ -379,12 +378,17 @@ function createChatHeaderAvatar(user) {
 }
 
 function showReplyIndicator(msg) {
-    document.getElementById('reply-indicator').className = 'visible';
-    document.getElementById('reply-indicator-author').innerText = msg.sender_display_name || "User";
-    document.getElementById('reply-indicator-text').innerText = msg.media_type === 'text' ? msg.text : `[${msg.media_type}]`;
-    document.getElementById('reply-cancel-btn').onclick = hideReplyIndicator;
+    if(DOM.replyIndicator) {
+        DOM.replyIndicator.className = 'visible';
+        DOM.replyAuthor.innerText = msg.sender_display_name || "User";
+        DOM.replyText.innerText = msg.media_type === 'text' ? msg.text : `[${msg.media_type}]`;
+    }
 }
-function hideReplyIndicator() { document.getElementById('reply-indicator').className = ''; replyToMessage = null; }
+function hideReplyIndicator() { 
+    if(DOM.replyIndicator) DOM.replyIndicator.className = ''; 
+    replyToMessage = null; 
+}
+
 function debounce(func, wait) { let t; return function(...a) { clearTimeout(t); t = setTimeout(() => func.apply(this, a), wait); }; }
 function formatUTCToLocal(iso) { if(!iso) return ""; return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
 function formatLastSeen(iso) { if(!iso) return ""; const d = new Date(iso); return d.toDateString()===new Date().toDateString() ? `був сьогодні о ${d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}` : `був ${d.toLocaleDateString()}`; }
@@ -394,8 +398,9 @@ function findMsg(id) { for(let uid in chatHistories) { const m = chatHistories[u
 
 // === GLOBAL ===
 window.reply = (id) => { const m = findMsg(id); if(m) { replyToMessage = m; showReplyIndicator(m); DOM.input.focus(); } };
-window.toggleReactions = (id) => {
-    document.querySelectorAll('.emoji-picker').forEach(e => e.style.display = 'none');
+window.toggleReactions = (id, e) => {
+    if(e) e.stopPropagation(); // Зупиняємо спливання, щоб глобальний клік не закрив відразу
+    document.querySelectorAll('.emoji-picker').forEach(el => el.style.display = 'none');
     const el = document.getElementById(`emoji-${id}`);
     if(el) el.style.display = el.style.display==='block' ? 'none' : 'block';
 };
@@ -434,7 +439,7 @@ function loadTrendingGifs() {
     DOM.gifLibrary.innerHTML = '<div class="gif-loading">Завантаження...</div>';
     fetch(`https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_API_KEY}&limit=20`)
     .then(r=>r.json()).then(d=>renderGifs(d.data))
-    .catch(()=>DOM.gifLibrary.innerHTML='<div class="gif-loading">Помилка завантаження</div>');
+    .catch(()=>DOM.gifLibrary.innerHTML='<div class="gif-loading">Помилка (API)</div>');
 }
 function searchGifs() {
     const q = DOM.gifSearchInput.value; if(!q) return;
