@@ -4,7 +4,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 import cloudinary.uploader
 from datetime import datetime, timezone
 from sqlalchemy import func
-from eventlet import tpool # <--- ВИПРАВЛЕНО: Імпортуємо tpool прямо
+from eventlet import tpool 
 
 from . import db, login, socketio
 from .forms import LoginForm, RegistrationForm
@@ -42,7 +42,10 @@ def search_users():
         results = []
         for user in users:
             user_dict = user.to_dict()
-            user_dict['is_favorite'] = current_user.is_favorite(user)
+            try:
+                user_dict['is_favorite'] = current_user.is_favorite(user)
+            except:
+                user_dict['is_favorite'] = False
             results.append(user_dict)
         
         return jsonify({'users': results})
@@ -53,16 +56,22 @@ def search_users():
 @main.route('/user/<int:user_id>')
 @login_required
 def view_user_profile(user_id):
-    user = User.query.get_or_404(user_id)
-    if user.id == current_user.id:
-        return redirect(url_for('main.profile'))
-    
-    is_fav = False
     try:
-        is_fav = current_user.is_favorite(user)
-    except: pass
+        user = User.query.get_or_404(user_id)
+        if user.id == current_user.id:
+            return redirect(url_for('main.profile'))
         
-    return render_template('user_profile.html', user=user, is_favorite=is_fav)
+        is_fav = False
+        try:
+            is_fav = current_user.is_favorite(user)
+        except Exception as e:
+            print(f"Error checking favorite for user {user_id}: {e}")
+            
+        return render_template('user_profile.html', user=user, is_favorite=is_fav)
+    except Exception as e:
+        print(f"General profile view error: {e}")
+        flash("Помилка при завантаженні профілю")
+        return redirect(url_for('main.index'))
 
 @main.route('/add_favorite/<int:user_id>', methods=['POST'])
 @login_required
@@ -74,7 +83,8 @@ def add_favorite(user_id):
             current_user.add_favorite(user)
             db.session.commit()
         return jsonify({'success': True})
-    except:
+    except Exception as e:
+        print(f"Add favorite error: {e}")
         db.session.rollback()
         return jsonify({'success': False}), 500
 
@@ -87,7 +97,10 @@ def remove_favorite(user_id):
         current_user.remove_favorite(user)
         db.session.commit()
         return jsonify({'success': True})
-    except: return jsonify({'success': False}), 500
+    except Exception as e:
+        print(f"Remove favorite error: {e}")
+        db.session.rollback()
+        return jsonify({'success': False}), 500
 
 @main.route('/profile')
 @login_required
@@ -126,7 +139,6 @@ def upload_avatar():
     if not file.filename: return jsonify({'success': False}), 400
     
     try:
-        # ВИПРАВЛЕНО: Використовуємо tpool.execute
         res = tpool.execute(
             cloudinary.uploader.upload, 
             file, 
@@ -153,7 +165,6 @@ def upload_file():
         if file.mimetype.startswith('video/'): file_type = 'video'
         elif file.mimetype == 'image/gif': file_type = 'gif'
 
-        # ВИПРАВЛЕНО: Використовуємо tpool.execute
         res = tpool.execute(
             cloudinary.uploader.upload, 
             file, 
@@ -219,7 +230,8 @@ def register():
             db.session.commit()
             flash('Реєстрація успішна!')
             return redirect(url_for('main.login'))
-        except:
+        except Exception as e:
+            print(f"Registration error: {e}")
             db.session.rollback()
             flash('Помилка (ім\'я зайняте?)')
     return render_template('register.html', form=form)

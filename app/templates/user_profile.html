@@ -32,7 +32,12 @@
                         {% if is_favorite %}
                             <span style="color: var(--success); font-weight: 600;">⭐ В обраному</span>
                         {% else %}
-                            Останній раз: {{ user.last_seen.strftime('%d.%m.%Y о %H:%M') if user.last_seen else 'Невідомо' }}
+                            {# Перевірка наявності дати перед виводом #}
+                            {% if user.last_seen %}
+                                Останній раз: {{ user.last_seen.strftime('%d.%m.%Y о %H:%M') }}
+                            {% else %}
+                                Нещодавно
+                            {% endif %}
                         {% endif %}
                     </div>
                 </div>
@@ -78,7 +83,7 @@
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) location.reload();
-                    else alert('Error: ' + data.error);
+                    else alert('Помилка дії з обраним');
                 });
             });
         });
