@@ -84,7 +84,6 @@ def add_favorite(user_id):
             db.session.commit()
         return jsonify({'success': True})
     except Exception as e:
-        print(f"Add favorite error: {e}")
         db.session.rollback()
         return jsonify({'success': False}), 500
 
@@ -98,7 +97,6 @@ def remove_favorite(user_id):
         db.session.commit()
         return jsonify({'success': True})
     except Exception as e:
-        print(f"Remove favorite error: {e}")
         db.session.rollback()
         return jsonify({'success': False}), 500
 
@@ -134,13 +132,15 @@ def update_profile():
 @main.route('/upload_avatar', methods=['POST'])
 @login_required
 def upload_avatar():
-    if 'avatar' not in request.files: return jsonify({'success': False}), 400
+    if 'avatar' not in request.files: 
+        return jsonify({'success': False, 'error': 'No file part'}), 400
     file = request.files['avatar']
-    if not file.filename: return jsonify({'success': False}), 400
+    if not file.filename: 
+        return jsonify({'success': False, 'error': 'No selected file'}), 400
     
     try:
-        res = tpool.execute(
-            cloudinary.uploader.upload, 
+        # Спробуємо завантажити без tpool, щоб уникнути проблем із потоками
+        res = cloudinary.uploader.upload(
             file, 
             folder='avatars', 
             transformation=[{'width': 200, 'height': 200, 'crop': 'fill'}]
@@ -183,9 +183,6 @@ def upload_file():
         data = msg.to_dict()
         socketio.emit('new_message', data, room=int(recipient_id))
         socketio.emit('new_message', data, room=current_user.id)
-        
-        socketio.emit('force_chat_list_update', room=current_user.id)
-        socketio.emit('force_chat_list_update', room=int(recipient_id))
         
         return jsonify({"success": True, "data": data})
     except Exception as e:
@@ -231,7 +228,6 @@ def register():
             flash('Реєстрація успішна!')
             return redirect(url_for('main.login'))
         except Exception as e:
-            print(f"Registration error: {e}")
             db.session.rollback()
             flash('Помилка (ім\'я зайняте?)')
     return render_template('register.html', form=form)
